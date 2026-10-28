@@ -291,9 +291,9 @@ above, a `dev` push would silently overwrite the live prod Worker.
    browsers can't execute). What's *not* in a repo file, and needs
    setting per-project in Cloudflare's build settings (see the table
    above for the two values that actually differ):
-   - **Build command** (both projects): `cd frontend && npm install &&
-     npm run build` -- without this, `frontend/dist` doesn't exist at
-     deploy time either (same blank-page symptom).
+   - **Build command**: none needed -- `wrangler.jsonc`'s `build.command`
+     builds the frontend as part of every `wrangler deploy` / `wrangler
+     preview`, so `frontend/dist` always exists at deploy time.
    - **Deploy command**: `npx wrangler deploy --env=""` for the prod
      project, `npx wrangler deploy --env dev` for the dev project (the
      explicit `--env` is required once `wrangler.jsonc` defines more than

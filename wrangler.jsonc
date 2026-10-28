@@ -37,6 +37,14 @@
       "API_ORIGIN": "https://yarnboard.onrender.com"
     }
   },
+  // Wrangler runs this itself before every deploy/preview/dev, so a
+  // Cloudflare project with no dashboard build command (branch preview
+  // builds included) still gets a frontend/dist. VITE_API_BASE_URL is
+  // forced empty so a leftover dashboard build variable can't bake in the
+  // Render URL and bypass the /api proxy (process env beats .env in Vite).
+  "build": {
+    "command": "cd frontend && npm install && VITE_API_BASE_URL= npm run build"
+  },
   "assets": {
     "directory": "frontend/dist",
     "binding": "ASSETS",
