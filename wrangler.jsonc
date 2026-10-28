@@ -22,8 +22,35 @@
   // staging backend today, so there's nothing here to override for that.
   "name": "yarnboard",
   "compatibility_date": "2026-09-09",
+  // Proxies /api/* to the Render backend so the API is same-origin with
+  // the page -- see worker/index.js for why (Safari/iOS drop the session
+  // cookie when the API is on a different site).
+  "main": "worker/index.js",
+  "vars": {
+    "API_ORIGIN": "https://yarnboard.onrender.com"
+  },
+  // Cloudflare's non-production branch builds run `wrangler preview`, which
+  // refuses to start without its own vars. There's no staging API, so
+  // previews share the same Render backend as prod and dev.
+  "previews": {
+    "vars": {
+      "API_ORIGIN": "https://yarnboard.onrender.com"
+    }
+  },
+  // Wrangler runs this itself before every deploy/preview/dev, so a
+  // Cloudflare project with no dashboard build command (branch preview
+  // builds included) still gets a frontend/dist. VITE_API_BASE_URL is
+  // forced empty so a leftover dashboard build variable can't bake in the
+  // Render URL and bypass the /api proxy (process env beats .env in Vite).
+  "build": {
+    "command": "cd frontend && npm install && VITE_API_BASE_URL= npm run build"
+  },
   "assets": {
     "directory": "frontend/dist",
+    "binding": "ASSETS",
+    // Only /api/* reaches the Worker script; every other path is served
+    // straight from assets without invoking it.
+    "run_worker_first": ["/api/*"],
     // React Router (BrowserRouter, client-side routing) needs unmatched
     // paths like /pattern/5 to fall back to index.html rather than
     // 404ing on a direct load or page refresh.
@@ -47,7 +74,11 @@
       // Distinct Worker name -> distinct workers.dev URL
       // (yarnboard-dev.<your-subdomain>.workers.dev), so this can never
       // collide with or overwrite the prod deployment above.
-      "name": "yarnboard-dev"
+      "name": "yarnboard-dev",
+      // `vars` isn't inherited by named environments -- repeat it.
+      "vars": {
+        "API_ORIGIN": "https://yarnboard.onrender.com"
+      }
     }
   }
 }
