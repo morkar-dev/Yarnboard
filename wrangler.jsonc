@@ -29,6 +29,14 @@
   "vars": {
     "API_ORIGIN": "https://yarnboard.onrender.com"
   },
+  // Cloudflare's non-production branch builds run `wrangler preview`, which
+  // refuses to start without its own vars. There's no staging API, so
+  // previews share the same Render backend as prod and dev.
+  "previews": {
+    "vars": {
+      "API_ORIGIN": "https://yarnboard.onrender.com"
+    }
+  },
   "assets": {
     "directory": "frontend/dist",
     "binding": "ASSETS",
