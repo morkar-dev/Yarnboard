@@ -11,7 +11,7 @@
         dev dev-backend dev-frontend down \
         test test-backend test-frontend \
         build build-check \
-        e2e
+        e2e audit audit-local
 
 install: install-backend install-frontend
 
@@ -94,4 +94,49 @@ e2e:
 	cd frontend && npm run test:e2e; \
 	status=$$?; \
 	lsof -ti :5001 -ti :5173 | xargs kill 2>/dev/null; \
+	exit $$status
+
+# Re-checks the fixable findings from the speed & SEO audit (PageSpeed
+# Insights / GTmetrix / SEOptimer): meta tags, robots.txt, sitemap.xml,
+# llms.txt, ai-catalog.json, cache and security headers, the HTTPS
+# redirect, SPF/DMARC, console errors, and Lighthouse's CLS (layout shift).
+# Prints PASS/FAIL per item plus what still needs a human; fails if any
+# check fails. HTTP checks are scripts/audit/seo_audit.py (stdlib only),
+# browser checks frontend/scripts/audit-browser.mjs (Playwright's Chromium
+# + Lighthouse via npx). AUDIT_SKIP_LIGHTHOUSE=1 skips the ~30s Lighthouse
+# run.
+#
+#   make audit                                  # the live site
+#   make audit AUDIT_URL=https://yarnboard-dev.example.workers.dev
+#   make audit-local                            # this checkout, built
+AUDIT_URL ?= https://www.yarnboard.net
+AUDIT_LOCAL_PORT ?= 8790
+
+audit:
+	@status=0; \
+	python3 scripts/audit/seo_audit.py $(AUDIT_URL) || status=1; \
+	( cd frontend && node scripts/audit-browser.mjs $(AUDIT_URL) ) || status=1; \
+	exit $$status
+
+# Builds the frontend exactly as Cloudflare does and serves it with
+# `wrangler dev` -- so _headers and the SPA fallback behave like
+# production -- plus a throwaway backend (its own SQLite file, wiped before
+# and after; never the real yarnboard.db) so the pages render for real.
+# Both run on their own ports, so this never collides with `make dev`.
+AUDIT_LOCAL_API_PORT ?= 5003
+
+audit-local:
+	@cd frontend && VITE_API_BASE_URL=http://localhost:$(AUDIT_LOCAL_API_PORT) npm run build > /dev/null
+	@rm -f backend/instance/audit.db
+	@cd backend && DATABASE_URL=sqlite:///audit.db FLASK_ENV=development .venv/bin/flask --app wsgi seed-e2e > /dev/null 2>&1
+	@trap 'lsof -ti :$(AUDIT_LOCAL_PORT) -ti :$(AUDIT_LOCAL_API_PORT) | xargs kill 2>/dev/null; rm -f backend/instance/audit.db' EXIT INT TERM; \
+	( cd backend && DATABASE_URL=sqlite:///audit.db FLASK_ENV=development CORS_ORIGINS=http://localhost:$(AUDIT_LOCAL_PORT) \
+	    RESEND_ONBOARDING= RESEND_NOTIFICATIONS= RESEND_NEWSLETTER= GEMINI_API_KEY= \
+	    .venv/bin/flask --app wsgi run --port $(AUDIT_LOCAL_API_PORT) > /dev/null 2>&1 & ) ; \
+	( npx -y wrangler@4 dev --port $(AUDIT_LOCAL_PORT) > /dev/null 2>&1 & ) ; \
+	for i in $$(seq 1 60); do curl -sf http://localhost:$(AUDIT_LOCAL_API_PORT)/api/health > /dev/null && break; sleep 1; done; \
+	for i in $$(seq 1 60); do curl -sf http://localhost:$(AUDIT_LOCAL_PORT)/ > /dev/null && break; sleep 1; done; \
+	status=0; \
+	python3 scripts/audit/seo_audit.py http://localhost:$(AUDIT_LOCAL_PORT) --local || status=1; \
+	( cd frontend && node scripts/audit-browser.mjs http://localhost:$(AUDIT_LOCAL_PORT) ) || status=1; \
 	exit $$status

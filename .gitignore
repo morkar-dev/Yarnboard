@@ -217,3 +217,9 @@ SESSION_CONTEXT.txt
 cookies.txt
 package-lock.json
 package.json
+
+# wrangler dev local state (make audit-local)
+.wrangler/
+
+# Lighthouse output from make audit / audit-local
+frontend/audit-report.report.*
