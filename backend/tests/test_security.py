@@ -185,6 +185,64 @@ def rate_limited_client():
     os.unlink(db_path)
 
 
+@pytest.fixture()
+def proxied_rate_limited_client():
+    """Like rate_limited_client, with the Cloudflare Worker's shared
+    secret configured -- see client_ip() in app/extensions.py."""
+    import os
+    import tempfile
+
+    db_fd, db_path = tempfile.mkstemp(suffix=".db")
+    flask_app = create_app(config_overrides={
+        "TESTING": True,
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{db_path}",
+        "RATELIMIT_ENABLED": True,
+        "PROXY_SHARED_SECRET": "worker-secret",
+    })
+    with flask_app.app_context():
+        db.create_all()
+        limiter.reset()
+        yield flask_app.test_client()
+        db.session.remove()
+        db.drop_all()
+        limiter.reset()
+
+    os.close(db_fd)
+    os.unlink(db_path)
+
+
+def _failed_logins(client, headers, count):
+    return [
+        client.post("/api/login", json={"email": "nobody@test.com", "password": "wrong"}, headers=headers).status_code
+        for _ in range(count)
+    ]
+
+
+def test_worker_forwarded_ips_get_separate_rate_limit_buckets(proxied_rate_limited_client):
+    def via_worker(ip):
+        return {"X-Yarnboard-Client-IP": ip, "X-Yarnboard-Proxy-Secret": "worker-secret"}
+
+    assert 429 in _failed_logins(proxied_rate_limited_client, via_worker("203.0.113.1"), 25)
+    # A different visitor behind the same Worker isn't throttled by the first.
+    assert _failed_logins(proxied_rate_limited_client, via_worker("203.0.113.2"), 1) == [401]
+
+
+def test_forwarded_ip_without_the_secret_is_ignored(proxied_rate_limited_client):
+    forged = {"X-Yarnboard-Client-IP": "203.0.113.1", "X-Yarnboard-Proxy-Secret": "guess"}
+    assert 429 in _failed_logins(proxied_rate_limited_client, forged, 25)
+    # Rotating the forged IP doesn't escape the real (remote_addr) bucket.
+    forged["X-Yarnboard-Client-IP"] = "203.0.113.99"
+    assert _failed_logins(proxied_rate_limited_client, forged, 1) == [429]
+
+
+def test_only_the_last_x_forwarded_for_entry_is_trusted(proxied_rate_limited_client):
+    # Render appends the real connecting address last; anything before it
+    # is whatever the caller sent.
+    assert 429 in _failed_logins(proxied_rate_limited_client, {"X-Forwarded-For": "1.1.1.1, 198.51.100.7"}, 25)
+    assert _failed_logins(proxied_rate_limited_client, {"X-Forwarded-For": "9.9.9.9, 198.51.100.7"}, 1) == [429]
+    assert _failed_logins(proxied_rate_limited_client, {"X-Forwarded-For": "198.51.100.8"}, 1) == [401]
+
+
 def test_login_is_rate_limited_per_ip(rate_limited_client):
     email = _register(rate_limited_client, "ratelimited")
 

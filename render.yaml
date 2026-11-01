@@ -48,6 +48,12 @@ services:
       # preview URL).
       - key: CORS_ORIGINS
         sync: false
+      # Same random value as the Cloudflare Worker's PROXY_SHARED_SECRET
+      # secret (both prod and dev Workers) -- lets the backend trust the
+      # visitor IP the Worker forwards, for per-IP rate limiting. See
+      # client_ip() in backend/app/extensions.py.
+      - key: PROXY_SHARED_SECRET
+        sync: false
       # VITE_API_BASE_URL is deliberately NOT set here: the frontend build
       # falls back to relative "/api/..." requests when it's unset (see
       # frontend/src/api/client.ts), which is correct for a same-origin

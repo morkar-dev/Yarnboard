@@ -281,6 +281,13 @@ above, a `dev` push would silently overwrite the live prod Worker.
    `env.dev`) at that Render URL. `CORS_ORIGINS` on Render isn't needed
    for this setup -- the proxy strips the `Origin` header, since the
    browser's request is same-origin.
+   Then pick one long random string and set it in three places as
+   `PROXY_SHARED_SECRET`: on Render (Environment), and as a secret on both
+   Workers -- `npx wrangler secret put PROXY_SHARED_SECRET` and
+   `npx wrangler secret put PROXY_SHARED_SECRET --env dev`. It lets the
+   backend trust the visitor IP the Worker forwards (see `client_ip()` in
+   `backend/app/extensions.py`); without it, every visitor coming through
+   the Worker shares one login/register rate-limit bucket.
 3. In the Cloudflare dashboard, create **two** Workers projects
    connected to this repo -- one tracking `main`, one tracking `dev`.
    This repo's root `wrangler.jsonc` already defines both Worker configs
