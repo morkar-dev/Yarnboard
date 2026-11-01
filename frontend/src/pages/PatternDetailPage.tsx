@@ -31,6 +31,7 @@ import PatternVisibilityPanel from "../components/PatternVisibilityPanel";
 import { useAuth } from "../context/AuthContext";
 import { useApiErrorMessage } from "../i18n/useApiErrorMessage";
 import type { Pattern } from "../types/models";
+import { parseMaterials, renderInlineLinks } from "../utils/patternText";
 import { translationForUiLanguage } from "../utils/patternTranslation";
 
 /** Hebrew Unicode block -- used as a lightweight, purely-client-side
@@ -172,9 +173,14 @@ export default function PatternDetailPage() {
 
       {materials && (
         <CollapsibleCard title={t("patternDetail.materials")}>
-          <pre className="mb-0" dir="auto" style={{ whiteSpace: "pre-wrap" }}>
-            {materials}
-          </pre>
+          {/* One item per line; "[name](url)" links (kept by the scraper
+              from the source page, or typed by an editor) become real
+              links -- see utils/patternText. */}
+          <ul className="materials-list mb-0" dir="auto">
+            {parseMaterials(materials).map((item, i) => (
+              <li key={i}>{renderInlineLinks(item)}</li>
+            ))}
+          </ul>
         </CollapsibleCard>
       )}
 

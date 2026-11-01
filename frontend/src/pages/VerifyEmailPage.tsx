@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Card, Col, Row, Spinner } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router-dom";
@@ -21,8 +21,14 @@ export default function VerifyEmailPage() {
   const getErrorMessage = useApiErrorMessage();
   const [status, setStatus] = useState<Status>("verifying");
   const [message, setMessage] = useState<string>("");
+  // A verification token is single-use, so the request must go out once
+  // per token -- React's dev-mode StrictMode runs effects twice, and the
+  // second call would come back "already used" and overwrite the success.
+  const verifiedToken = useRef<string | null>(null);
 
   useEffect(() => {
+    if (token && verifiedToken.current === token) return;
+    verifiedToken.current = token;
     if (!token) {
       setStatus("error");
       setMessage(t("auth.verify.missingToken"));

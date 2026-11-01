@@ -29,6 +29,7 @@ Endpoints that matter most for correctness:
 """
 
 from flask import Blueprint, Response, current_app, request, jsonify
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -189,12 +190,16 @@ def preview_pattern():
     try:
         draft = scrape_pattern_from_url(url)
     except ScraperError as exc:
-        # No fixed translation key for this one -- the message itself is
-        # server-generated and varies per failure (bot-detection, timeout,
-        # unparseable page, etc.), not a fixed string a resource file could
-        # localize. The frontend shows it as-is regardless of UI language;
-        # "scraper_error" just tells it not to look up a translation key.
-        return jsonify({"error": str(exc), "code": "scraper_error"}), 502
+        # The exception text is for developers (it can name internal
+        # addresses, HTTP statuses, Playwright internals) -- log it, and
+        # give the user a fixed, friendly message instead. The frontend
+        # localizes it via errors.scraper_error.
+        current_app.logger.error("Scraping %s failed: %s", url, exc)
+        return jsonify({
+            "error": "We couldn't read that page automatically. Some sites block this - "
+                     "try saving the page (or its PDF) and uploading it instead.",
+            "code": "scraper_error",
+        }), 502
 
     return jsonify({
         "duplicate": False,
@@ -276,10 +281,13 @@ def preview_pattern_from_upload():
             html = raw_bytes.decode("utf-8", errors="replace")
             draft = parse_pattern_html(html, url)
     except ScraperError as exc:
-        # See preview_pattern's identical case above for why this is a
-        # raw message + a generic "don't translate this" code, not a
-        # fixed translation key.
-        return jsonify({"error": str(exc), "code": "scraper_error"}), 502
+        # See preview_pattern's identical case above.
+        current_app.logger.error("Parsing an uploaded file for %s failed: %s", url, exc)
+        return jsonify({
+            "error": "We couldn't read that file. Make sure it's the saved pattern page "
+                     "(HTML) or its PDF, and try again.",
+            "code": "file_parse_error",
+        }), 502
 
     return jsonify({
         "duplicate": False,
@@ -1372,17 +1380,36 @@ def community_patterns():
     progress up for. Private and shared-but-not-public patterns never
     appear here regardless of viewer -- that's what /mine and
     /shared-with-me are for.
+
+    `q` (optional) narrows the list to patterns whose title (in any
+    language) or author contains it, case-insensitively -- the navbar's
+    search box.
     ---
     tags: [Patterns]
+    parameters:
+      - in: query
+        name: q
+        type: string
+        required: false
     responses:
       200:
-        description: All public patterns, newest first
+        description: Public patterns (optionally matching q), newest first
     """
     user_id = get_current_user_id()
 
-    patterns = (
-        Pattern.query.filter_by(is_public=True).order_by(Pattern.created_at.desc()).all()
-    )
+    query = Pattern.query.filter_by(is_public=True)
+    search = (request.args.get("q") or "").strip()
+    if search:
+        # Escape LIKE wildcards so a search for "100%" means the text.
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{escaped}%"
+        query = query.filter(or_(
+            Pattern.title.ilike(like, escape="\\"),
+            Pattern.title_he.ilike(like, escape="\\"),
+            Pattern.title_en.ilike(like, escape="\\"),
+            Pattern.author.ilike(like, escape="\\"),
+        ))
+    patterns = query.order_by(Pattern.created_at.desc()).all()
     return jsonify([p.to_dict(current_user_id=user_id) for p in patterns]), 200
 
 
@@ -1544,3 +1571,42 @@ def toggle_progress(pattern_id):
     db.session.commit()
 
     return jsonify({"completed_steps": progress.completed_steps}), 200
+
+
+@patterns_bp.route("/<int:pattern_id>/progress", methods=["DELETE"])
+def clear_progress(pattern_id):
+    """
+    Uncheck every checklist step on this pattern for the current user only.
+    ---
+    tags: [Patterns]
+    parameters:
+      - in: path
+        name: pattern_id
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Progress cleared
+      401:
+        description: Not logged in
+      404:
+        description: No such pattern, or not visible to this user
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    user = User.query.get(user_id)
+    pattern = Pattern.query.get_or_404(pattern_id)
+    if not _can_view(user, pattern):
+        return jsonify({"error": "Pattern not found.", "code": "pattern_not_found"}), 404
+
+    progress = UserPatternProgress.query.filter_by(
+        user_id=user_id, pattern_id=pattern_id
+    ).first()
+    if progress is not None:
+        progress.completed_steps = {}
+        progress.pattern_version = pattern.instructions_version
+        db.session.commit()
+
+    return jsonify({"completed_steps": {}}), 200

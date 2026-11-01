@@ -68,9 +68,27 @@ def test_register_rejects_a_too_short_password(client):
 def test_register_accepts_a_password_at_the_minimum_length(client):
     resp = client.post(
         "/api/register",
-        json={"username": "minpw", "email": "minpw@test.com", "password": "eightchr"},
+        json={"username": "minpw", "email": "minpw@test.com", "password": "eightch1"},
     )
     assert resp.status_code == 201
+
+
+def test_register_rejects_a_password_without_a_number(client):
+    resp = client.post(
+        "/api/register",
+        json={"username": "nodigit", "email": "nodigit@test.com", "password": "onlyletters"},
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["code"] == "password_too_weak"
+
+
+def test_register_rejects_an_invalid_email(client):
+    resp = client.post(
+        "/api/register",
+        json={"username": "bademail", "email": "not-an-email", "password": "password123"},
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["code"] == "invalid_email"
 
 
 # --- Login timing side-channel (email enumeration) ---------------------

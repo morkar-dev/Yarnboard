@@ -151,6 +151,18 @@ export default function SubmitPatternPage() {
             </Alert>
           )}
 
+          {/* Above both tabs, not inside the link form: a failed link
+              fetch switches to the upload tab (see handleSubmit), and the
+              reason it failed has to still be on screen when it does. */}
+          {error && (
+            <Alert variant="danger" style={{ maxWidth: "32rem" }} onClose={() => setError(null)} dismissible>
+              <Alert.Heading as="h2" className="h6">
+                {t("submit.fetchFailedTitle")}
+              </Alert.Heading>
+              <p className="mb-0">{error}</p>
+            </Alert>
+          )}
+
           {mode === "link" ? (
             <Form onSubmit={handleSubmit} className="mb-2" style={{ maxWidth: "32rem" }}>
               <Form.Group className="mb-3" controlId="submit-url">
@@ -163,7 +175,6 @@ export default function SubmitPatternPage() {
                   required
                 />
               </Form.Group>
-              {error && <Alert variant="danger">{error}</Alert>}
               <Button type="submit" variant="primary" disabled={loading}>
                 {loading ? t("submit.fetching") : t("submit.previewButton")}
               </Button>

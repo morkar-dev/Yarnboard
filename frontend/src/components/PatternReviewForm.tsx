@@ -45,10 +45,12 @@ export default function PatternReviewForm({ draft, onChange }: Props) {
     updateField("instructions", { ...draft.instructions, [part]: steps });
   }
 
-  function addStep(part: string) {
+  /** `prefix` starts the new line as a heading ("## ") or a note ("> ")
+   * -- see utils/patternText for the step conventions. */
+  function addStep(part: string, prefix = "") {
     updateField("instructions", {
       ...draft.instructions,
-      [part]: [...draft.instructions[part], ""],
+      [part]: [...draft.instructions[part], prefix],
     });
   }
 
@@ -143,6 +145,7 @@ export default function PatternReviewForm({ draft, onChange }: Props) {
           value={draft.materials}
           onChange={(e) => updateField("materials", e.target.value)}
         />
+        <Form.Text className="text-muted">{t("reviewForm.materialsHint")}</Form.Text>
       </Form.Group>
 
       <Form.Group controlId="review-abbreviations">
@@ -156,7 +159,8 @@ export default function PatternReviewForm({ draft, onChange }: Props) {
         />
       </Form.Group>
 
-      <h5 className="mt-2">{t("reviewForm.instructionsHeading")}</h5>
+      <h5 className="mt-2 mb-0">{t("reviewForm.instructionsHeading")}</h5>
+      <Form.Text className="text-muted mt-0">{t("reviewForm.instructionsHint")}</Form.Text>
       {Object.entries(draft.instructions).map(([part, steps], partIndex, allParts) => (
         <Card key={part} className="shadow-sm">
           <Card.Body className="d-flex flex-column gap-2">
@@ -211,9 +215,17 @@ export default function PatternReviewForm({ draft, onChange }: Props) {
                 </Button>
               </InputGroup>
             ))}
-            <Button variant="outline-primary" size="sm" className="align-self-start" onClick={() => addStep(part)}>
-              {t("reviewForm.addStep")}
-            </Button>
+            <div className="d-flex flex-wrap gap-2">
+              <Button variant="outline-primary" size="sm" onClick={() => addStep(part)}>
+                {t("reviewForm.addStep")}
+              </Button>
+              <Button variant="outline-secondary" size="sm" onClick={() => addStep(part, "## ")}>
+                {t("reviewForm.addHeading")}
+              </Button>
+              <Button variant="outline-secondary" size="sm" onClick={() => addStep(part, "> ")}>
+                {t("reviewForm.addNote")}
+              </Button>
+            </div>
           </Card.Body>
         </Card>
       ))}

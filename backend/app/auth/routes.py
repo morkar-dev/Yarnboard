@@ -16,6 +16,7 @@ callers must send the user to check their email rather than treating
 registration as an implicit login (see AuthContext.tsx's register()).
 """
 
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -38,6 +39,10 @@ VERIFY_TOKEN_LIFETIME = timedelta(hours=24)
 # strongest lever against brute-force per NIST 800-63B guidance, and
 # complexity rules mostly just push people toward predictable patterns.
 MIN_PASSWORD_LENGTH = 8
+# Deliberately loose -- "something@something.tld" -- the verification
+# email is the real check; this only catches obvious typos up front.
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+USERNAME_MAX_LENGTH = 30  # matches the frontend's sign-up form
 
 # A precomputed bcrypt hash of a value nobody will ever type (fixed, not
 # generated per-request -- generating one would need an app context and
@@ -133,10 +138,26 @@ def register():
             "code": "missing_fields",
         }), 400
 
+    if len(username) > USERNAME_MAX_LENGTH:
+        return jsonify({
+            "error": f"Username must be at most {USERNAME_MAX_LENGTH} characters.",
+            "code": "username_too_long",
+            "max": USERNAME_MAX_LENGTH,
+        }), 400
+
+    if not EMAIL_RE.match(email):
+        return jsonify({"error": "Please enter a valid email address.", "code": "invalid_email"}), 400
+
     if len(password) < MIN_PASSWORD_LENGTH:
         return jsonify({
             "error": f"Password must be at least {MIN_PASSWORD_LENGTH} characters.",
             "code": "password_too_short",
+        }), 400
+
+    if not (re.search(r"[^\W\d_]", password) and re.search(r"\d", password)):
+        return jsonify({
+            "error": "Password must contain at least one letter and one number.",
+            "code": "password_too_weak",
         }), 400
 
     if User.query.filter((User.email == email) | (User.username == username)).first():
