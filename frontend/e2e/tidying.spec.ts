@@ -164,6 +164,23 @@ test.describe("submitting a pattern", () => {
     await expect(page.getByText("That link didn't work")).toBeHidden();
   });
 
+  test("trying an upload clears the stale link-failure alert", async ({ page }) => {
+    await page.goto("/submit");
+    await page.getByLabel("Pattern URL").fill("http://127.0.0.1/some-pattern");
+    await page.getByRole("button", { name: "Preview" }).click();
+    await expect(page.getByText("That link didn't work")).toBeVisible();
+
+    await page.getByLabel("Saved HTML or PDF file").setInputFiles({
+      name: "broken.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.4 not really a pdf"),
+    });
+    await page.getByRole("button", { name: "Preview from file" }).click();
+
+    await expect(page.getByText("We couldn't read that file.", { exact: false })).toBeVisible();
+    await expect(page.getByText("That link didn't work")).toBeHidden();
+  });
+
   test("an uploaded page keeps its material links, and the review form can add headings and notes", async ({ page }) => {
     const html = `<html><body><article>
       <h1>Uploaded Links Pattern</h1>

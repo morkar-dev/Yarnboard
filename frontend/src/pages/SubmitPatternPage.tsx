@@ -108,6 +108,9 @@ export default function SubmitPatternPage() {
   async function handleUploadPreview(e: FormEvent) {
     e.preventDefault();
     if (!uploadFile) return;
+    // The link-fetch failure that brought the user to this tab is stale
+    // once they try the upload instead.
+    setError(null);
     setUploadError(null);
     setPendingSharedResult(null);
     setUploadLoading(true);
