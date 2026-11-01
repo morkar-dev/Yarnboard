@@ -29,7 +29,8 @@ test("checking off a step as a guest carries that progress into a new account", 
   await page.goto("/register");
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("password123");
+  await page.getByLabel("Password", { exact: true }).fill("password123");
+  await page.getByLabel("Confirm password").fill("password123");
   await page.getByRole("button", { name: "Sign up" }).click();
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
 

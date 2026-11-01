@@ -20,15 +20,28 @@
  * login server-side -- so anonymous visitors see the explanation plus a
  * login/register prompt instead of the live form, rather than being able
  * to fill it out and only find out it's blocked at the end. */
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Alert, Button, ButtonGroup, Form } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { previewPattern, previewPatternFromUpload } from "../api/client";
+import { LinkIcon, LockIcon, MonitorIcon, PhoneIcon, ShieldIcon } from "../components/Icons";
 import { useAuth } from "../context/AuthContext";
 import { useApiErrorMessage } from "../i18n/useApiErrorMessage";
 
 type Mode = "link" | "upload";
+
+/** Why a link fetch usually fails, and the two ways to upload instead --
+ * shown in the failure alert. */
+const FAIL_REASONS: { icon: ReactNode; key: string }[] = [
+  { icon: <ShieldIcon size={16} />, key: "submit.whyBlocked" },
+  { icon: <LockIcon size={16} />, key: "submit.whyLogin" },
+  { icon: <LinkIcon size={16} />, key: "submit.whyNotPattern" },
+];
+const FIX_STEPS: { icon: ReactNode; key: string }[] = [
+  { icon: <MonitorIcon size={20} />, key: "submit.howComputer" },
+  { icon: <PhoneIcon size={20} />, key: "submit.howPhone" },
+];
 
 interface PreviewResult {
   duplicate: boolean;
@@ -95,6 +108,9 @@ export default function SubmitPatternPage() {
   async function handleUploadPreview(e: FormEvent) {
     e.preventDefault();
     if (!uploadFile) return;
+    // The link-fetch failure that brought the user to this tab is stale
+    // once they try the upload instead.
+    setError(null);
     setUploadError(null);
     setPendingSharedResult(null);
     setUploadLoading(true);
@@ -151,6 +167,37 @@ export default function SubmitPatternPage() {
             </Alert>
           )}
 
+          {/* Above both tabs, not inside the link form: a failed link
+              fetch switches to the upload tab (see handleSubmit), and the
+              reason it failed has to still be on screen when it does. */}
+          {error && (
+            <Alert variant="danger" style={{ maxWidth: "32rem" }} onClose={() => setError(null)} dismissible>
+              <Alert.Heading as="h2" className="h6">
+                {t("submit.fetchFailedTitle")}
+              </Alert.Heading>
+              <p className="small mb-2">{error}</p>
+              {/* Icons + a few words each, same as the home page -- the
+                  reasons and the fix should read at a glance. */}
+              <ul className="fetch-fail-reasons list-unstyled d-flex flex-wrap gap-2 mb-2">
+                {FAIL_REASONS.map(({ icon, key }) => (
+                  <li key={key} className="d-flex align-items-center gap-1 small">
+                    {icon}
+                    {t(key)}
+                  </li>
+                ))}
+              </ul>
+              <p className="small fw-semibold mb-1">{t("submit.howTitle")}</p>
+              <ul className="list-unstyled d-flex flex-wrap gap-2 mb-0">
+                {FIX_STEPS.map(({ icon, key }) => (
+                  <li key={key} className="fetch-fail-fix d-flex align-items-center gap-2 small">
+                    {icon}
+                    <span dir="auto">{t(key)}</span>
+                  </li>
+                ))}
+              </ul>
+            </Alert>
+          )}
+
           {mode === "link" ? (
             <Form onSubmit={handleSubmit} className="mb-2" style={{ maxWidth: "32rem" }}>
               <Form.Group className="mb-3" controlId="submit-url">
@@ -163,7 +210,6 @@ export default function SubmitPatternPage() {
                   required
                 />
               </Form.Group>
-              {error && <Alert variant="danger">{error}</Alert>}
               <Button type="submit" variant="primary" disabled={loading}>
                 {loading ? t("submit.fetching") : t("submit.previewButton")}
               </Button>

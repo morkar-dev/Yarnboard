@@ -36,6 +36,11 @@ class BaseConfig:
 
     SECRET_KEY = os.environ.get("SECRET_KEY", INSECURE_DEFAULT_SECRET_KEY)
 
+    # Shared with the Cloudflare Worker (`wrangler secret put
+    # PROXY_SHARED_SECRET`) so its forwarded client IP can be trusted for
+    # rate limiting -- see client_ip() in extensions.py. Empty = never trust it.
+    PROXY_SHARED_SECRET = os.environ.get("PROXY_SHARED_SECRET", "")
+
     # Neon (or any Postgres) connection string, e.g.
     # postgresql://user:password@host/dbname
     # Falls back to a local SQLite file so the app runs with zero setup.

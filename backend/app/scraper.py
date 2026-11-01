@@ -12,6 +12,7 @@ anything is saved (see the preview/submit split in patterns/routes.py).
 Treat every field this module returns as a suggestion, not ground truth.
 """
 
+import copy
 import io
 import ipaddress
 import re
@@ -84,6 +85,10 @@ INSTRUCTIONS_KEYWORDS = [
 # no line-break markup at all, e.g. "1. Cast on 40 stitches. 2. Join...".
 NUMBERED_LINE_RE = re.compile(r"^\d+[.)]\s+")
 BOLD_STYLE_RE = re.compile(r"font-weight\s*:\s*(bold|[6-9]00)", re.IGNORECASE)
+# A source-page link kept inline as markdown -- "[Yarn name](https://...)"
+# -- see _linearize. Only materials keep these (the frontend renders them
+# as hyperlinks); every other section is stored as plain text.
+MARKDOWN_LINK_RE = re.compile(r"\[([^\[\]]*)\]\((https?://[^)\s]+)\)")
 
 
 class ScraperError(Exception):
@@ -154,18 +159,25 @@ def parse_pattern_html(html: str, source_url: str) -> dict:
     """
     soup = BeautifulSoup(html, "html.parser")
 
+    # Everything that reads the page as-is goes first: _extract_sections
+    # rewrites the content container in place (links become "[text](url)"
+    # markdown, <br>s become newlines -- see _linearize), which would leak
+    # into a linked <h1> or break the "by Jane Doe" byline match.
     site_name, domain = _get_site_name(soup, source_url)
-    materials, abbreviations, instructions = _extract_sections(soup)
+    title = _extract_title(soup)
+    author = _extract_author(soup)
+    photo_url = _extract_image_url(soup, source_url)
+    materials, abbreviations, instructions = _extract_sections(soup, source_url)
 
     return {
-        "title": _extract_title(soup),
-        "author": _extract_author(soup),
+        "title": title,
+        "author": author,
         "materials": materials,
         "abbreviations": abbreviations,
         "instructions": instructions,
         "source_site_name": site_name,
         "source_domain": domain,
-        "photo_url": _extract_image_url(soup, source_url),
+        "photo_url": photo_url,
     }
 
 
@@ -422,8 +434,11 @@ def _extract_title(soup: BeautifulSoup) -> str:
         return og_title["content"].strip()
 
     h1 = soup.find("h1")
-    if h1 and h1.get_text(strip=True):
-        return h1.get_text(strip=True)
+    # " " separator: get_text(strip=True) alone would glue "Cozy <a>Beanie</a>"
+    # into "CozyBeanie".
+    h1_text = h1.get_text(" ", strip=True) if h1 else ""
+    if h1_text:
+        return h1_text
 
     if soup.title and soup.title.string:
         return _strip_site_name_suffix(soup.title.string.strip())
@@ -452,7 +467,12 @@ def _extract_author(soup: BeautifulSoup) -> str | None:
     if meta and meta.get("content"):
         return meta["content"].strip()
 
-    return _find_author_phrase(soup.get_text(" ", strip=True))
+    # One line per block element (on a copy -- _linearize edits in place),
+    # so a byline can't run on into the next heading: a flat
+    # get_text(" ") turned "by Jane Doe" + "<h2>Materials" into
+    # "Jane Doe Materials".
+    lines = _linearize(copy.copy(soup.body or soup))
+    return _find_author_phrase("\n".join(lines))
 
 
 def _find_author_phrase(text: str) -> str | None:
@@ -464,7 +484,9 @@ def _find_author_phrase(text: str) -> str | None:
     embedded Author property).
     """
     match = re.search(
-        r"\b(?:designed by|pattern by|written by|by)\s+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){0,2})",
+        # Name words are joined by spaces/tabs only, never a newline -- the
+        # next line is the next block (a heading, a paragraph), not more name.
+        r"\b(?:designed by|pattern by|written by|by)\s+([A-Z][\w'.-]+(?:[ \t]+[A-Z][\w'.-]+){0,2})",
         text[:2000],
     )
     if match:
@@ -481,7 +503,7 @@ def _find_author_phrase(text: str) -> str | None:
     # failure mode rare rather than eliminating a signal we don't have.
     hebrew_match = re.search(
         r"(?:מאת|עיצוב(?: של| על ידי)?|נוצר על ידי)\s*[:\-]?\s*"
-        r"([א-ת]+['׳]?(?:\s+[א-ת]+['׳]?){0,1})",
+        r"([א-ת]+['׳]?(?:[ \t]+[א-ת]+['׳]?){0,1})",
         text[:2000],
     )
     return hebrew_match.group(1).strip() if hebrew_match else None
@@ -546,7 +568,12 @@ def _find_content_container(soup: BeautifulSoup):
     return soup.body or soup
 
 
-def _linearize(container) -> list[str]:
+def _strip_links(line: str) -> str:
+    """A line with any markdown link reduced to just its link text."""
+    return MARKDOWN_LINK_RE.sub(r"\1", line)
+
+
+def _linearize(container, base_url: str | None = None) -> list[str]:
     """
     Flatten `container` into a list of non-empty text lines, one per
     visual line break. <br> tags become newlines directly; other
@@ -557,7 +584,19 @@ def _linearize(container) -> list[str]:
     This works whether a page uses proper <p>/<h2>/<ul><li> structure or
     (very common on older pattern blogs) just flows text and <br> tags
     with the occasional bold <span> as a pseudo-heading.
+
+    With `base_url`, every http(s) <a> becomes inline markdown
+    "[text](absolute-url)" so a materials line like "Yarn: Drops Air" keeps
+    the shop link the source page had on it. _classify_lines matches
+    keywords/labels against the link-stripped text and only lets
+    materials keep the markdown.
     """
+    if base_url:
+        for a in container.find_all("a", href=True):
+            href = urljoin(base_url, a["href"].strip())
+            text = a.get_text(" ", strip=True).replace("[", "(").replace("]", ")")
+            if text and urlparse(href).scheme in ("http", "https") and not re.search(r"[\s)]", href):
+                a.replace_with(f"[{text}]({href})")
     for br in container.find_all("br"):
         br.replace_with("\n")
     for tag in container.find_all(BLOCK_LEVEL_TAGS):
@@ -567,7 +606,7 @@ def _linearize(container) -> list[str]:
     return [line.strip() for line in raw.split("\n") if line.strip()]
 
 
-def _extract_sections(soup: BeautifulSoup) -> tuple[str, str, dict]:
+def _extract_sections(soup: BeautifulSoup, source_url: str | None = None) -> tuple[str, str, dict]:
     """
     HTML front-end for _classify_lines: finds the real content container,
     collects "label" tag texts (headings + bold-styled short tags) and the
@@ -585,7 +624,7 @@ def _extract_sections(soup: BeautifulSoup) -> tuple[str, str, dict]:
     label_texts = {tag.get_text(strip=True) for tag in container.find_all(_is_label_tag)}
     title_lines = {tag.get_text(strip=True) for tag in container.find_all("h1")}
 
-    lines = _linearize(container)
+    lines = _linearize(container, source_url)
 
     return _classify_lines(lines, label_texts, title_lines)
 
@@ -650,7 +689,10 @@ def _classify_lines(
             parts.setdefault(state[1], [])
             parts[state[1]].extend(_split_into_steps(current_lines))
 
-    for line in lines:
+    for raw_line in lines:
+        # Matching (and every section but materials) uses the link-free
+        # text -- a URL could otherwise contain a keyword like "pattern".
+        line = _strip_links(raw_line)
         if line in excluded_lines:
             continue
 
@@ -681,7 +723,9 @@ def _classify_lines(
             state = ("part", line.rstrip(":").strip() or f"Part {len(parts) + 1}")
             continue
 
-        if state is not None:
+        if state == "materials":
+            current_lines.append(raw_line)
+        elif state is not None:
             current_lines.append(line)
 
     flush()

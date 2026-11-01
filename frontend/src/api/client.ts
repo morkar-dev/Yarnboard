@@ -229,14 +229,24 @@ export function unsavePattern(patternId: number) {
   });
 }
 
-export function fetchCommunityPatterns() {
-  return request<Pattern[]>("/api/patterns/community");
+/** `query` (optional) narrows to patterns whose title -- in any language
+ * -- or author contains it; see GET /api/patterns/community. */
+export function fetchCommunityPatterns(query?: string) {
+  const q = query?.trim();
+  return request<Pattern[]>(`/api/patterns/community${q ? `?q=${encodeURIComponent(q)}` : ""}`);
 }
 
 /** Patterns someone else explicitly shared with the current user -- see
  * sharePattern below. Distinct from fetchMySaved (your own bookmarks). */
 export function fetchSharedWithMe() {
   return request<Pattern[]>("/api/patterns/shared-with-me");
+}
+
+/** Unchecks every step of this pattern for the current user only. */
+export function clearProgress(patternId: number) {
+  return request<{ completed_steps: Record<string, boolean[]> }>(`/api/patterns/${patternId}/progress`, {
+    method: "DELETE",
+  });
 }
 
 export function fetchPattern(patternId: number) {

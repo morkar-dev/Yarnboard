@@ -44,6 +44,15 @@ export function setGuestStep(patternId: number, part: string, index: number, com
  * pre-login progress off to the brand-new account so it isn't silently
  * lost the moment someone who's been using the app as a guest signs up.
  */
+/** Unchecks everything on one pattern (the checklist's "Clear all"). */
+export function clearGuestProgress(patternId: number): void {
+  try {
+    window.localStorage.removeItem(`${KEY_PREFIX}${patternId}`);
+  } catch {
+    // Best-effort only -- see module docstring.
+  }
+}
+
 export function getAllGuestProgress(): Record<string, Record<string, boolean[]>> {
   const all: Record<string, Record<string, boolean[]>> = {};
   try {
