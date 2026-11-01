@@ -11,7 +11,7 @@
         dev dev-backend dev-frontend down \
         test test-backend test-frontend \
         build build-check \
-        e2e audit audit-local
+        e2e audit audit-main audit-dev audit-local
 
 install: install-backend install-frontend
 
@@ -106,17 +106,37 @@ e2e:
 # + Lighthouse via npx). AUDIT_SKIP_LIGHTHOUSE=1 skips the ~30s Lighthouse
 # run.
 #
-#   make audit                                  # the live site
-#   make audit AUDIT_URL=https://yarnboard-dev.example.workers.dev
-#   make audit-local                            # this checkout, built
-AUDIT_URL ?= https://www.yarnboard.net
+# AUDIT_ENV picks the deployment, matching the two Cloudflare Workers in
+# wrangler.jsonc: main -> the prod custom domain, dev -> the dev Worker's
+# workers.dev URL (same default as e2e-dev/fixtures.ts). On dev the
+# HTTPS-redirect and SPF/DMARC checks are skipped -- workers.dev is
+# Cloudflare's domain, not ours to configure. (Not plain ENV: shells use
+# that name for their own startup file.)
+#
+#   make audit-main               # the live site (also plain `make audit`)
+#   make audit-dev                # the dev Worker
+#   make audit AUDIT_URL=https://...  # any other URL (checked like main)
+#   make audit-local              # this checkout, built and served locally
+AUDIT_ENV ?= main
+AUDIT_MAIN_URL ?= https://www.yarnboard.net
+AUDIT_DEV_URL ?= https://yarnboard-dev.morkar9696.workers.dev
 AUDIT_LOCAL_PORT ?= 8790
 
 audit:
-	@status=0; \
-	python3 scripts/audit/seo_audit.py $(AUDIT_URL) || status=1; \
-	( cd frontend && node scripts/audit-browser.mjs $(AUDIT_URL) ) || status=1; \
+	@case "$(AUDIT_ENV)" in main|dev) ;; *) echo "AUDIT_ENV must be main or dev, got '$(AUDIT_ENV)'"; exit 2;; esac
+	@url="$(AUDIT_URL)"; \
+	[ -n "$$url" ] || { [ "$(AUDIT_ENV)" = dev ] && url="$(AUDIT_DEV_URL)" || url="$(AUDIT_MAIN_URL)"; }; \
+	echo "Auditing $(AUDIT_ENV): $$url"; \
+	status=0; \
+	python3 scripts/audit/seo_audit.py "$$url" --env=$(AUDIT_ENV) || status=1; \
+	( cd frontend && node scripts/audit-browser.mjs "$$url" ) || status=1; \
 	exit $$status
+
+audit-main:
+	@$(MAKE) --no-print-directory audit AUDIT_ENV=main
+
+audit-dev:
+	@$(MAKE) --no-print-directory audit AUDIT_ENV=dev
 
 # Builds the frontend exactly as Cloudflare does and serves it with
 # `wrangler dev` -- so _headers and the SPA fallback behave like

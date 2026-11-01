@@ -13,10 +13,11 @@ at the end rather than faked.
 Standard library only -- runs with any python3, no venv needed.
 
 Usage:
-    python3 scripts/audit/seo_audit.py [URL] [--local]
+    python3 scripts/audit/seo_audit.py [URL] [--env=main|dev] [--local]
 
---local skips checks that only make sense on the real domain (HTTP->HTTPS
-redirect, HSTS, SPF/DMARC DNS records).
+--env=dev (the dev Worker on workers.dev) skips the HTTPS-redirect and
+SPF/DMARC checks, since workers.dev is Cloudflare's domain, not ours. --local skips everything that only
+makes sense on a real deployment (HTTP->HTTPS redirect, HSTS, SPF/DMARC).
 """
 
 from __future__ import annotations
@@ -370,6 +371,7 @@ COLORS = {"PASS": "\033[32m", "FAIL": "\033[31m", "WARN": "\033[33m", "SKIP": "\
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     local = "--local" in sys.argv
+    env = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--env=")), "main")
     base = (args[0] if args else "https://www.yarnboard.net").rstrip("/") + "/"
 
     try:
@@ -389,6 +391,9 @@ def main() -> int:
     if local:
         record("SKIP", "SEO", "HTTP -> HTTPS redirect", "local run")
         record("SKIP", "SEO", "SPF / DMARC records", "local run")
+    elif env == "dev":
+        record("SKIP", "SEO", "HTTP -> HTTPS redirect", "dev Worker -- workers.dev's redirects are Cloudflare's, not ours")
+        record("SKIP", "SEO", "SPF / DMARC records", "dev Worker -- workers.dev isn't our mail domain")
     else:
         check_https_redirect(base)
         check_mail_dns(base)
@@ -397,7 +402,8 @@ def main() -> int:
     check_agentic(base)
 
     color = sys.stdout.isatty()
-    print(f"\nYarnboard speed & SEO audit -- {base}\n")
+    label = "local build" if local else env
+    print(f"\nYarnboard speed & SEO audit ({label}) -- {base}\n")
     area = None
     for status_, area_, check, detail in results:
         if area_ != area:
