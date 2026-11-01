@@ -103,3 +103,23 @@ def test_scraper_failure_returns_a_friendly_message(client):
     body = resp.get_json()
     assert body["code"] == "scraper_error"
     assert "127.0.0.1" not in body["error"]
+
+
+def test_material_links_dont_leak_into_title_or_author():
+    # _linearize rewrites <a> tags into markdown inside the soup; title and
+    # author must be read before that happens.
+    html = """
+    <html><body><article>
+      <h1>Cozy <a href="/tag/beanie">Beanie</a></h1>
+      <p>Designed by <a href="/designers/jane">Jane Doe</a></p>
+      <h2>Materials</h2>
+      <ul><li>Yarn: <a href="/shop/drops-air">Drops Air</a></li></ul>
+      <h2>Instructions</h2>
+      <ol><li>Cast on 96.</li></ol>
+    </article></body></html>
+    """
+    draft = parse_pattern_html(html, "https://example.com/beanie")
+
+    assert draft["title"] == "Cozy Beanie"
+    assert draft["author"] == "Jane Doe"
+    assert draft["materials"] == "Yarn: [Drops Air](https://example.com/shop/drops-air)"

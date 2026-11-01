@@ -12,6 +12,7 @@ anything is saved (see the preview/submit split in patterns/routes.py).
 Treat every field this module returns as a suggestion, not ground truth.
 """
 
+import copy
 import io
 import ipaddress
 import re
@@ -158,18 +159,25 @@ def parse_pattern_html(html: str, source_url: str) -> dict:
     """
     soup = BeautifulSoup(html, "html.parser")
 
+    # Everything that reads the page as-is goes first: _extract_sections
+    # rewrites the content container in place (links become "[text](url)"
+    # markdown, <br>s become newlines -- see _linearize), which would leak
+    # into a linked <h1> or break the "by Jane Doe" byline match.
     site_name, domain = _get_site_name(soup, source_url)
+    title = _extract_title(soup)
+    author = _extract_author(soup)
+    photo_url = _extract_image_url(soup, source_url)
     materials, abbreviations, instructions = _extract_sections(soup, source_url)
 
     return {
-        "title": _extract_title(soup),
-        "author": _extract_author(soup),
+        "title": title,
+        "author": author,
         "materials": materials,
         "abbreviations": abbreviations,
         "instructions": instructions,
         "source_site_name": site_name,
         "source_domain": domain,
-        "photo_url": _extract_image_url(soup, source_url),
+        "photo_url": photo_url,
     }
 
 
@@ -426,8 +434,11 @@ def _extract_title(soup: BeautifulSoup) -> str:
         return og_title["content"].strip()
 
     h1 = soup.find("h1")
-    if h1 and h1.get_text(strip=True):
-        return h1.get_text(strip=True)
+    # " " separator: get_text(strip=True) alone would glue "Cozy <a>Beanie</a>"
+    # into "CozyBeanie".
+    h1_text = h1.get_text(" ", strip=True) if h1 else ""
+    if h1_text:
+        return h1_text
 
     if soup.title and soup.title.string:
         return _strip_site_name_suffix(soup.title.string.strip())
@@ -456,7 +467,12 @@ def _extract_author(soup: BeautifulSoup) -> str | None:
     if meta and meta.get("content"):
         return meta["content"].strip()
 
-    return _find_author_phrase(soup.get_text(" ", strip=True))
+    # One line per block element (on a copy -- _linearize edits in place),
+    # so a byline can't run on into the next heading: a flat
+    # get_text(" ") turned "by Jane Doe" + "<h2>Materials" into
+    # "Jane Doe Materials".
+    lines = _linearize(copy.copy(soup.body or soup))
+    return _find_author_phrase("\n".join(lines))
 
 
 def _find_author_phrase(text: str) -> str | None:
@@ -468,7 +484,9 @@ def _find_author_phrase(text: str) -> str | None:
     embedded Author property).
     """
     match = re.search(
-        r"\b(?:designed by|pattern by|written by|by)\s+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){0,2})",
+        # Name words are joined by spaces/tabs only, never a newline -- the
+        # next line is the next block (a heading, a paragraph), not more name.
+        r"\b(?:designed by|pattern by|written by|by)\s+([A-Z][\w'.-]+(?:[ \t]+[A-Z][\w'.-]+){0,2})",
         text[:2000],
     )
     if match:
@@ -485,7 +503,7 @@ def _find_author_phrase(text: str) -> str | None:
     # failure mode rare rather than eliminating a signal we don't have.
     hebrew_match = re.search(
         r"(?:מאת|עיצוב(?: של| על ידי)?|נוצר על ידי)\s*[:\-]?\s*"
-        r"([א-ת]+['׳]?(?:\s+[א-ת]+['׳]?){0,1})",
+        r"([א-ת]+['׳]?(?:[ \t]+[א-ת]+['׳]?){0,1})",
         text[:2000],
     )
     return hebrew_match.group(1).strip() if hebrew_match else None
