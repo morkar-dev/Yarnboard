@@ -235,6 +235,13 @@ def test_forwarded_ip_without_the_secret_is_ignored(proxied_rate_limited_client)
     assert _failed_logins(proxied_rate_limited_client, forged, 1) == [429]
 
 
+def test_non_ascii_proxy_secret_falls_back_instead_of_erroring(proxied_rate_limited_client):
+    # Werkzeug decodes headers as latin-1, so this arrives as non-ASCII
+    # text -- which hmac.compare_digest refuses to compare as str.
+    headers = {"X-Yarnboard-Client-IP": "203.0.113.5", "X-Yarnboard-Proxy-Secret": "s\u00e9cret"}
+    assert _failed_logins(proxied_rate_limited_client, headers, 1) == [401]
+
+
 def test_only_the_last_x_forwarded_for_entry_is_trusted(proxied_rate_limited_client):
     # Render appends the real connecting address last; anything before it
     # is whatever the caller sent.

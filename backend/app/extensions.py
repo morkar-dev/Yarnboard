@@ -44,7 +44,10 @@ def client_ip() -> str:
     secret = current_app.config.get("PROXY_SHARED_SECRET", "")
     forwarded_ip = request.headers.get("X-Yarnboard-Client-IP", "").strip()
     sent_secret = request.headers.get("X-Yarnboard-Proxy-Secret", "")
-    if secret and forwarded_ip and hmac.compare_digest(sent_secret, secret):
+    # Compared as bytes: compare_digest raises TypeError on non-ASCII str,
+    # and Werkzeug hands headers over latin-1-decoded -- a junk header would
+    # otherwise turn /api/login into a 500.
+    if secret and forwarded_ip and hmac.compare_digest(sent_secret.encode("utf-8"), secret.encode("utf-8")):
         return forwarded_ip
 
     forwarded_for = request.headers.get("X-Forwarded-For", "")
