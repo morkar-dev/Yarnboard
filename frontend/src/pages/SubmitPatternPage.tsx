@@ -159,7 +159,18 @@ export default function SubmitPatternPage() {
               <Alert.Heading as="h2" className="h6">
                 {t("submit.fetchFailedTitle")}
               </Alert.Heading>
-              <p className="mb-0">{error}</p>
+              <p className="mb-2">{error}</p>
+              <p className="small fw-semibold mb-1">{t("submit.whyTitle")}</p>
+              <ul className="small mb-2 ps-3">
+                <li>{t("submit.whyBlocked")}</li>
+                <li>{t("submit.whyLogin")}</li>
+                <li>{t("submit.whyNotPattern")}</li>
+              </ul>
+              <p className="small fw-semibold mb-1">{t("submit.howTitle")}</p>
+              <ul className="small mb-0 ps-3">
+                <li>{t("submit.howComputer")}</li>
+                <li>{t("submit.howPhone")}</li>
+              </ul>
             </Alert>
           )}
 
