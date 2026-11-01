@@ -33,12 +33,21 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import photo, translation
+import uuid
+
+from .. import photo, transcription, translation
 from ..email import send_pattern_shared_email, send_pattern_updated_email
-from ..extensions import db
+from ..extensions import db, limiter
 from ..models import Pattern, PatternShare, User, UserPatternProgress
 from ..notifications import create_in_app_notification, is_enabled
-from ..scraper import parse_pattern_html, parse_pattern_pdf, scrape_pattern_from_url, ScraperError
+from ..scraper import (
+    MANUAL_SOURCE_PREFIX,
+    ScraperError,
+    parse_pattern_html,
+    parse_pattern_pdf,
+    parse_pattern_text,
+    scrape_pattern_from_url,
+)
 from ..utils import get_current_user_id
 
 patterns_bp = Blueprint("patterns", __name__, url_prefix="/api/patterns")
@@ -209,6 +218,152 @@ def preview_pattern():
     }), 200
 
 
+MAX_PATTERN_TEXT_CHARS = 50_000
+
+
+def _optional_source_url(raw: str | None):
+    """(url, error_response) for the optional source link on text/photo
+    patterns -- blank is fine (a pattern from a book has none), anything
+    else must be an http(s) URL so the attribution link works."""
+    url = (raw or "").strip()
+    if url and not url.lower().startswith(("http://", "https://")):
+        return None, (jsonify({"error": "The source link must start with http:// or https://.", "code": "invalid_source_url"}), 400)
+    return url, None
+
+
+def _draft_response(draft: dict, url: str, user_id: int):
+    return jsonify({
+        "duplicate": False,
+        "existing_pattern_id": None,
+        "already_shared_with_you": _shared_pattern_id(url, user_id) if url else None,
+        "draft": draft,
+    }), 200
+
+
+@patterns_bp.route("/preview-text", methods=["POST"])
+def preview_pattern_from_text():
+    """
+    Turn pasted pattern text into a reviewable draft -- no DB write. Same
+    response shape as /preview. `url` (the original source) is optional.
+    ---
+    tags: [Patterns]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required: [text]
+          properties:
+            text: {type: string}
+            url: {type: string}
+    responses:
+      200:
+        description: Either {duplicate:true, existing_pattern_id} or {duplicate:false, draft}
+      400:
+        description: No text, text too long, or a source link that isn't http(s)
+      401:
+        description: Not logged in
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "Paste the pattern's text first.", "code": "text_required"}), 400
+    if len(text) > MAX_PATTERN_TEXT_CHARS:
+        return jsonify({
+            "error": f"That's too much text (max {MAX_PATTERN_TEXT_CHARS:,} characters).",
+            "code": "text_too_long",
+            "max_chars": MAX_PATTERN_TEXT_CHARS,
+        }), 400
+    url, error = _optional_source_url(data.get("url"))
+    if error:
+        return error
+    if url:
+        duplicate_response = _existing_pattern_response(url, user_id)
+        if duplicate_response:
+            return duplicate_response
+
+    return _draft_response(parse_pattern_text(text, url or None), url, user_id)
+
+
+@patterns_bp.route("/preview-photos", methods=["POST"])
+@limiter.limit("20 per hour")
+def preview_pattern_from_photos():
+    """
+    Read a pattern out of up to 5 photos (multipart `photos`, in page
+    order) with Gemini and return a reviewable draft -- no DB write. Same
+    response shape as /preview. `url` (the original source) is optional.
+    Rate-limited per IP since every call is a paid Gemini request.
+    ---
+    tags: [Patterns]
+    consumes: [multipart/form-data]
+    parameters:
+      - in: formData
+        name: photos
+        type: file
+        required: true
+      - in: formData
+        name: url
+        type: string
+    responses:
+      200:
+        description: Either {duplicate:true, existing_pattern_id} or {duplicate:false, draft}
+      400:
+        description: No photos, too many, or a file that isn't an image
+      401:
+        description: Not logged in
+      422:
+        description: No readable pattern text in the photos
+      502:
+        description: The photos couldn't be read (Gemini unavailable)
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    files = [f for f in request.files.getlist("photos") if f and f.filename]
+    if not files:
+        return jsonify({"error": "Add at least one photo of the pattern.", "code": "photos_required"}), 400
+    if len(files) > transcription.MAX_PHOTOS:
+        return jsonify({
+            "error": f"Up to {transcription.MAX_PHOTOS} photos at a time.",
+            "code": "too_many_photos",
+            "max_photos": transcription.MAX_PHOTOS,
+        }), 400
+    url, error = _optional_source_url(request.form.get("url"))
+    if error:
+        return error
+    if url:
+        duplicate_response = _existing_pattern_response(url, user_id)
+        if duplicate_response:
+            return duplicate_response
+
+    try:
+        images = [photo.process_upload(f.read()) for f in files]
+    except photo.PhotoError:
+        return jsonify({"error": "One of those files isn't a photo we can read.", "code": "invalid_photo"}), 400
+
+    try:
+        text = transcription.transcribe_pattern_photos(images)
+    except translation.TranslationError as exc:
+        current_app.logger.error("Reading pattern photos failed: %s", exc)
+        return jsonify({
+            "error": "We couldn't read those photos right now. Please try again in a moment.",
+            "code": "photo_read_error",
+        }), 502
+    if not text:
+        return jsonify({
+            "error": "We couldn't find pattern text in those photos.",
+            "code": "photo_no_text",
+        }), 422
+
+    return _draft_response(parse_pattern_text(text, url or None), url, user_id)
+
+
 @patterns_bp.route("/preview-upload", methods=["POST"])
 def preview_pattern_from_upload():
     """
@@ -314,7 +469,7 @@ def submit_pattern():
         required: true
         schema:
           type: object
-          required: [original_url, title]
+          required: [title]
           properties:
             original_url: {type: string}
             title: {type: string}
@@ -340,13 +495,20 @@ def submit_pattern():
     data = request.get_json(silent=True) or {}
     original_url = (data.get("original_url") or "").strip()
     title = (data.get("title") or "").strip()
-    if not original_url or not title:
+    if not title:
         return jsonify({
-            "error": "original_url and title are required",
+            "error": "title is required",
             "code": "missing_fields",
         }), 400
+    # A pattern pasted as text or read from photos may have no source link
+    # (a book, a handwritten card). original_url is still the dedup key and
+    # NOT NULL, so give it a unique placeholder; to_dict reports
+    # has_source_link=False and the UI hides the "on <site>" link.
+    is_manual = not original_url
+    if is_manual:
+        original_url = f"{MANUAL_SOURCE_PREFIX}{uuid.uuid4()}"
 
-    if Pattern.find_duplicate(original_url, user_id):
+    if not is_manual and Pattern.find_duplicate(original_url, user_id):
         return jsonify({
             "error": "A pattern from this URL already exists.",
             "code": "pattern_already_exists",
@@ -356,8 +518,8 @@ def submit_pattern():
         original_url=original_url,
         title=title,
         author=(data.get("author") or None),
-        source_site_name=data.get("source_site_name") or Pattern.derive_source_domain(original_url),
-        source_domain=data.get("source_domain") or Pattern.derive_source_domain(original_url),
+        source_site_name=None if is_manual else (data.get("source_site_name") or Pattern.derive_source_domain(original_url)),
+        source_domain=None if is_manual else (data.get("source_domain") or Pattern.derive_source_domain(original_url)),
         materials=data.get("materials"),
         abbreviations=data.get("abbreviations"),
         instructions=data.get("instructions") or {},

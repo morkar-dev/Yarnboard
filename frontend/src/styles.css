@@ -211,3 +211,41 @@ textarea {
   border-radius: 0.5rem;
   padding: 0.35rem 0.6rem;
 }
+
+/* --- Photo patterns (PhotoPatternForm / ReviewPatternPage) ------------- */
+.photo-thumb {
+  position: relative;
+  width: 5.5rem;
+  height: 7rem;
+}
+.photo-thumb img,
+.review-photo-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  border: 1px solid var(--yb-border);
+}
+.review-photo-preview {
+  width: 5rem;
+  height: 6.5rem;
+}
+.photo-thumb-number {
+  position: absolute;
+  bottom: 0.25rem;
+  inset-inline-start: 0.25rem;
+  background: rgba(var(--yb-eggplant-dark-rgb), 0.85);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0 0.45rem;
+}
+.photo-thumb-remove {
+  position: absolute;
+  top: 0.25rem;
+  inset-inline-end: 0.25rem;
+  background-color: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  padding: 0.35rem;
+}

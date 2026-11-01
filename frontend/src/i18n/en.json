@@ -139,7 +139,7 @@
   },
   "submit": {
     "title": "Submit a Pattern",
-    "intro": "Paste a link to a knitting or crochet pattern webpage. We'll pull out the title, materials, abbreviations, and instructions for you to review before publishing.",
+    "intro": "Add a pattern from a link, a saved page or PDF, pasted text, or photos. We'll sort it into materials, abbreviations, and steps for you to review before saving.",
     "urlLabel": "Pattern URL",
     "urlPlaceholder": "https://example.com/my-pattern",
     "previewButton": "Preview",
@@ -167,7 +167,24 @@
     "whyNotPattern": "Not the pattern page",
     "howTitle": "Save it, then upload below:",
     "howComputer": "Ctrl/⌘ + S → HTML",
-    "howPhone": "Share → Print → PDF"
+    "howPhone": "Share → Print → PDF",
+    "modeGroupLabel": "How do you want to add the pattern?",
+    "modeText": "Paste text",
+    "modePhotos": "Photos",
+    "textLabel": "Pattern text",
+    "textPlaceholder": "Cozy Beanie\nMaterials:\n- 2 skeins of yarn\nInstructions:\n1. Cast on 96 stitches.",
+    "textHint": "Title on the first line. Start sections with \"Materials:\", \"Instructions:\" or a part name ending in \":\".",
+    "textButton": "Preview",
+    "sourceUrlLabel": "Original link (optional)",
+    "genericTextError": "Could not read that text.",
+    "photosLabel": "Photos of the pattern",
+    "photosHint": "A printed page, a book, or a handwritten card - in page order, up to {{max}}. The first photo becomes the pattern's picture.",
+    "photosTooMany": "Only the first {{max}} photos were kept.",
+    "photoAlt": "Photo {{number}}",
+    "removePhoto": "Remove photo {{number}}",
+    "photosButton": "Read photos",
+    "readingPhotos": "Reading your photos...",
+    "genericPhotosError": "Could not read those photos."
   },
   "review": {
     "title": "Review before saving",
@@ -175,7 +192,9 @@
     "saveNotice": "This pattern is saved privately to your account - only you (and admins) can see it until you choose to publish it to the community from the pattern's page.",
     "saveButton": "Save Pattern",
     "saving": "Saving...",
-    "saveFailed": "Saving failed."
+    "saveFailed": "Saving failed.",
+    "noSourceLabel": "No original link - this pattern will be saved without one.",
+    "usePhotoLabel": "Use this photo as the pattern's picture"
   },
   "publishConsent": {
     "introLead": "Publishing to Yarnboard:",
@@ -339,6 +358,14 @@
     "password_too_short": "Password must be at least 8 characters.",
     "password_too_weak": "Password must contain at least one letter and one number.",
     "invalid_email": "Please enter a valid email address.",
-    "username_too_long": "Username must be at most {{max}} characters."
+    "username_too_long": "Username must be at most {{max}} characters.",
+    "text_required": "Paste the pattern's text first.",
+    "text_too_long": "That's too much text (max {{max_chars}} characters).",
+    "invalid_source_url": "The original link must start with http:// or https://.",
+    "photos_required": "Add at least one photo of the pattern.",
+    "too_many_photos": "Up to {{max_photos}} photos at a time.",
+    "invalid_photo": "One of those files isn't a photo we can read.",
+    "photo_read_error": "We couldn't read those photos right now. Please try again in a moment.",
+    "photo_no_text": "We couldn't find pattern text in those photos. Try clearer, closer photos."
   }
 }

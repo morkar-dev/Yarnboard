@@ -7,12 +7,17 @@
  * is_public's docstring in backend/app/models.py) -- it doesn't publish
  * to the community, so there's no consent gate here the way there used
  * to be. That gate now lives on PatternVisibilityPanel, shown at the
- * point a pattern actually does become public. */
-import { useState } from "react";
-import { Alert, Button } from "react-bootstrap";
+ * point a pattern actually does become public.
+ *
+ * A pattern from pasted text or photos may arrive with no originalUrl
+ * (saved with no source link -- see submit_pattern), and one from photos
+ * also brings its first photo, uploaded as the pattern's picture right
+ * after the pattern is created (unless the user unticks that). */
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Button, Form } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
-import { submitPattern } from "../api/client";
+import { submitPattern, uploadPatternPhoto } from "../api/client";
 import PatternReviewForm from "../components/PatternReviewForm";
 import { useApiErrorMessage } from "../i18n/useApiErrorMessage";
 import type { PatternDraft } from "../types/models";
@@ -20,7 +25,10 @@ import { useUnsavedChangesWarning } from "../utils/useUnsavedChangesWarning";
 
 interface LocationState {
   draft: PatternDraft;
+  /** "" for a text/photo pattern with no source link. */
   originalUrl: string;
+  /** First photo of a photographed pattern, already shrunk. */
+  photo?: File;
 }
 
 export default function ReviewPatternPage() {
@@ -33,6 +41,11 @@ export default function ReviewPatternPage() {
   const [draft, setDraft] = useState<PatternDraft | null>(state?.draft ?? null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [usePhoto, setUsePhoto] = useState(true);
+  const photoPreview = useMemo(() => (state?.photo ? URL.createObjectURL(state.photo) : null), [state?.photo]);
+  useEffect(() => () => {
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+  }, [photoPreview]);
 
   // Warn on tab close/refresh once the draft has actually been touched --
   // comparing against the original scraped draft (not just "any draft
@@ -55,6 +68,14 @@ export default function ReviewPatternPage() {
     setSaving(true);
     try {
       const result = await submitPattern({ ...draft, original_url: state!.originalUrl });
+      if (state!.photo && usePhoto) {
+        try {
+          await uploadPatternPhoto(result.pattern.id, state!.photo);
+        } catch {
+          // The pattern itself is saved; a photo can still be added from
+          // its Edit page, so don't block on this.
+        }
+      }
       navigate(`/pattern/${result.pattern.id}`);
     } catch (err) {
       setError(getErrorMessage(err, t("review.saveFailed")));
@@ -66,7 +87,21 @@ export default function ReviewPatternPage() {
   return (
     <div>
       <h1 className="mb-2">{t("review.title")}</h1>
-      <p className="text-muted">{t("review.sourceLabel", { url: state.originalUrl })}</p>
+      <p className="text-muted">
+        {state.originalUrl ? t("review.sourceLabel", { url: state.originalUrl }) : t("review.noSourceLabel")}
+      </p>
+      {photoPreview && (
+        <div className="d-flex align-items-center gap-3 mb-3">
+          <img src={photoPreview} alt="" className="review-photo-preview" />
+          <Form.Check
+            type="checkbox"
+            id="review-use-photo"
+            label={t("review.usePhotoLabel")}
+            checked={usePhoto}
+            onChange={(e) => setUsePhoto(e.target.checked)}
+          />
+        </div>
+      )}
       <PatternReviewForm draft={draft} onChange={setDraft} />
       <Alert variant="light" className="my-4">
         {t("review.saveNotice")}
