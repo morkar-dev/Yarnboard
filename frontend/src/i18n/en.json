@@ -162,13 +162,12 @@
     "communityPage": "Community",
     "alreadyHaveTail": "page first - Yarnboard avoids storing the same source URL twice.",
     "fetchFailedTitle": "That link didn't work",
-    "whyTitle": "Why does this happen?",
-    "whyBlocked": "Some sites block automatic readers to protect their content.",
-    "whyLogin": "The pattern is behind a login or a purchase.",
-    "whyNotPattern": "The link points to a shop or search page, not the pattern itself.",
-    "howTitle": "Upload it instead:",
-    "howComputer": "On a computer: open the pattern, press Ctrl+S (⌘+S on Mac), save it as \"Webpage, HTML only\", then choose that file below.",
-    "howPhone": "On a phone: open the pattern, tap Share → Print, save it as a PDF, then choose that PDF below."
+    "whyBlocked": "Site blocks it",
+    "whyLogin": "Needs a login",
+    "whyNotPattern": "Not the pattern page",
+    "howTitle": "Save it, then upload below:",
+    "howComputer": "Ctrl/⌘ + S → HTML",
+    "howPhone": "Share → Print → PDF"
   },
   "review": {
     "title": "Review before saving",
