@@ -174,6 +174,28 @@ export function previewPatternFromUpload(url: string, htmlFile: File) {
   });
 }
 
+/** Pasted pattern text -> a draft (see POST /api/patterns/preview-text).
+ * `url` is the optional original source; "" for none. */
+export function previewPatternFromText(text: string, url: string) {
+  return request<PreviewResponse>("/api/patterns/preview-text", {
+    method: "POST",
+    body: JSON.stringify({ text, url }),
+  });
+}
+
+/** Photos of a pattern, in page order, read by Gemini into a draft (see
+ * POST /api/patterns/preview-photos). Shrink them first (utils/
+ * resizeImage) -- the server caps a whole request at 5MB. */
+export function previewPatternFromPhotos(photos: File[], url: string) {
+  const formData = new FormData();
+  photos.forEach((photo) => formData.append("photos", photo));
+  if (url) formData.append("url", url);
+  return request<PreviewResponse>("/api/patterns/preview-photos", {
+    method: "POST",
+    body: formData,
+  });
+}
+
 /**
  * Upload (or replace) the photo on an already-published pattern -- works
  * for a pattern that already had a scraped or previously-uploaded photo,

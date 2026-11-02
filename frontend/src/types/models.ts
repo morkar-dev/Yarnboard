@@ -22,7 +22,11 @@ export type InstructionsMap = Record<string, PatternStep[]>;
 
 export interface Pattern {
   id: number;
+  /** A "manual:<uuid>" placeholder when has_source_link is false. */
   original_url: string;
+  /** False for a pattern pasted as text or read from photos without a
+   * source link -- there's no original page to link to. */
+  has_source_link: boolean;
   title: string;
   author: string | null;
   source_site_name: string | null;

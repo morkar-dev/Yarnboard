@@ -17,19 +17,30 @@ export default function AttributionTag({ pattern }: { pattern: Pattern }) {
       <span>
         {t("attribution.uploadedBy")} <strong className="text-body">{pattern.uploader}</strong>
       </span>
-      <span>
-        {t("attribution.originalByOn")}{" "}
-        <strong className="text-body" dir="auto">{pattern.author || t("attribution.unknownAuthor")}</strong>{" "}
-        {t("attribution.on")}{" "}
-        <a
-          href={pattern.original_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="link-primary"
-        >
-          {originalSite}
-        </a>
-      </span>
+      {pattern.has_source_link ? (
+        <span>
+          {t("attribution.originalByOn")}{" "}
+          <strong className="text-body" dir="auto">{pattern.author || t("attribution.unknownAuthor")}</strong>{" "}
+          {t("attribution.on")}{" "}
+          <a
+            href={pattern.original_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="link-primary"
+          >
+            {originalSite}
+          </a>
+        </span>
+      ) : (
+        // Pasted text / photos with no source link: there's no page to
+        // credit, only (maybe) a named author.
+        pattern.author && (
+          <span>
+            {t("attribution.originalByOn")}{" "}
+            <strong className="text-body" dir="auto">{pattern.author}</strong>
+          </span>
+        )
+      )}
     </div>
   );
 }

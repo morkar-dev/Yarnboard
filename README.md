@@ -47,6 +47,14 @@ hot-reload -- see Local setup below.
   loopback/private/link-local addresses, checked both up front and
   per-request) so a submitted URL can't be used to read local files off
   the server or reach internal services (SSRF).
+- **Text & photo patterns**: a pattern can also be pasted as plain text
+  (`parse_pattern_text` in `scraper.py`: first line is the title,
+  `Heading:` / `# Heading` lines start sections and parts) or
+  photographed -- up to 5 photos, shrunk in the browser, then transcribed
+  by Gemini (`backend/app/transcription.py`, same `GEMINI_API_KEY`) into
+  that same text format. Both land on the usual review draft. The source
+  link is optional for these; without one the pattern is stored with a
+  `manual:<uuid>` placeholder URL and `has_source_link: false`.
 - **Translation & RTL**: a pattern can be machine-translated in either
   direction -- an English-primary pattern gets a Hebrew overlay, or a
   Hebrew-primary one gets an English overlay -- via the Gemini API

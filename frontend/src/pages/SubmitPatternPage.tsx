@@ -1,9 +1,11 @@
-/** Step 1 of submitting a pattern: either paste a URL to scrape, or
- * upload a file directly -- two explicit, always-available choices (see
- * `mode` below), not one hidden behind the other failing. Either way,
- * this hands off a preview draft to ReviewPatternPage for editing + the
- * publish-consent gate. See PublishConsentNotice for why the review step
- * isn't skippable.
+/** Step 1 of submitting a pattern, four explicit, always-available ways
+ * in (see `mode` below): paste a URL to scrape, upload a saved page/PDF,
+ * paste the pattern's text (TextPatternForm), or photograph it
+ * (PhotoPatternForm). Every one hands a preview draft to
+ * ReviewPatternPage for editing + the publish-consent gate. See
+ * PublishConsentNotice for why the review step isn't skippable. Text and
+ * photo patterns may have no source link at all (a book, a handwritten
+ * card).
  *
  * "Upload a file" exists for two different reasons that both land on the
  * same form: a PDF (e.g. a paid Etsy/Ravelry pattern that only exists as
@@ -21,15 +23,33 @@
  * login/register prompt instead of the live form, rather than being able
  * to fill it out and only find out it's blocked at the end. */
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Alert, Button, ButtonGroup, Form } from "react-bootstrap";
+import { Alert, Button, Form } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
 import { previewPattern, previewPatternFromUpload } from "../api/client";
-import { LinkIcon, LockIcon, MonitorIcon, PhoneIcon, ShieldIcon } from "../components/Icons";
+import {
+  CameraIcon,
+  FileIcon,
+  LinkIcon,
+  LockIcon,
+  MonitorIcon,
+  PhoneIcon,
+  ShieldIcon,
+  TextIcon,
+} from "../components/Icons";
+import PhotoPatternForm from "../components/PhotoPatternForm";
+import TextPatternForm from "../components/TextPatternForm";
 import { useAuth } from "../context/AuthContext";
 import { useApiErrorMessage } from "../i18n/useApiErrorMessage";
 
-type Mode = "link" | "upload";
+type Mode = "link" | "upload" | "text" | "photos";
+
+const MODES: { mode: Mode; icon: ReactNode; labelKey: string }[] = [
+  { mode: "link", icon: <LinkIcon size={18} />, labelKey: "submit.modeLink" },
+  { mode: "upload", icon: <FileIcon size={18} />, labelKey: "submit.modeUpload" },
+  { mode: "text", icon: <TextIcon size={18} />, labelKey: "submit.modeText" },
+  { mode: "photos", icon: <CameraIcon size={18} />, labelKey: "submit.modePhotos" },
+];
 
 /** Why a link fetch usually fails, and the two ways to upload instead --
  * shown in the failure alert. */
@@ -50,6 +70,15 @@ interface PreviewResult {
   draft: unknown;
 }
 
+/** Everything the review page needs: the draft, its source link ("" for a
+ * text/photo pattern without one), and -- for photos -- the first photo,
+ * saved as the pattern's picture after it's created. */
+interface PendingReview {
+  result: PreviewResult;
+  originalUrl: string;
+  photo?: File;
+}
+
 export default function SubmitPatternPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -64,35 +93,38 @@ export default function SubmitPatternPage() {
   // seen and give the user a real choice (view the shared pattern
   // instead, or continue with their own copy), not just flash by while
   // the page navigates on regardless (see handleContinueAnyway).
-  const [pendingSharedResult, setPendingSharedResult] = useState<PreviewResult | null>(null);
+  const [pendingShared, setPendingShared] = useState<PendingReview | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
 
-  function goToReview(result: PreviewResult) {
-    if (result.duplicate) {
-      navigate(`/pattern/${result.existing_pattern_id}`);
+  function openReview({ result, originalUrl, photo }: PendingReview) {
+    navigate("/submit/review", { state: { draft: result.draft, originalUrl, photo } });
+  }
+
+  function goToReview(pending: PendingReview) {
+    if (pending.result.duplicate) {
+      navigate(`/pattern/${pending.result.existing_pattern_id}`);
       return;
     }
-    if (result.already_shared_with_you) {
-      setPendingSharedResult(result);
+    if (pending.result.already_shared_with_you) {
+      setPendingShared(pending);
       return;
     }
-    navigate("/submit/review", { state: { draft: result.draft, originalUrl: url } });
+    openReview(pending);
   }
 
   function handleContinueAnyway() {
-    if (!pendingSharedResult) return;
-    navigate("/submit/review", { state: { draft: pendingSharedResult.draft, originalUrl: url } });
+    if (pendingShared) openReview(pendingShared);
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setPendingSharedResult(null);
+    setPendingShared(null);
     setLoading(true);
     try {
-      goToReview(await previewPattern(url));
+      goToReview({ result: await previewPattern(url), originalUrl: url });
     } catch (err) {
       setError(getErrorMessage(err, t("submit.genericFetchError")));
       // Any preview failure (blocked by bot-detection, timed out, DNS
@@ -112,10 +144,10 @@ export default function SubmitPatternPage() {
     // once they try the upload instead.
     setError(null);
     setUploadError(null);
-    setPendingSharedResult(null);
+    setPendingShared(null);
     setUploadLoading(true);
     try {
-      goToReview(await previewPatternFromUpload(url, uploadFile));
+      goToReview({ result: await previewPatternFromUpload(url, uploadFile), originalUrl: url });
     } catch (err) {
       setUploadError(getErrorMessage(err, t("submit.genericUploadError")));
     } finally {
@@ -135,27 +167,30 @@ export default function SubmitPatternPage() {
         </Alert>
       ) : (
         <>
-          <ButtonGroup className="mb-3">
-            <Button
-              variant={mode === "link" ? "primary" : "outline-primary"}
-              onClick={() => setMode("link")}
-            >
-              {t("submit.modeLink")}
-            </Button>
-            <Button
-              variant={mode === "upload" ? "primary" : "outline-primary"}
-              onClick={() => setMode("upload")}
-            >
-              {t("submit.modeUpload")}
-            </Button>
-          </ButtonGroup>
+          <div className="d-flex flex-wrap gap-2 mb-3" role="group" aria-label={t("submit.modeGroupLabel")}>
+            {MODES.map((item) => (
+              <Button
+                key={item.mode}
+                variant={mode === item.mode ? "primary" : "outline-primary"}
+                aria-pressed={mode === item.mode}
+                className="d-inline-flex align-items-center gap-2"
+                onClick={() => {
+                  setMode(item.mode);
+                  setPendingShared(null);
+                }}
+              >
+                {item.icon}
+                {t(item.labelKey)}
+              </Button>
+            ))}
+          </div>
 
-          {pendingSharedResult?.already_shared_with_you && (
+          {pendingShared?.result.already_shared_with_you && (
             <Alert variant="warning" style={{ maxWidth: "32rem" }}>
               <p className="mb-2">{t("sharedWithMe.alreadySharedWarning")}</p>
               <div className="d-flex gap-2">
                 <Link
-                  to={`/pattern/${pendingSharedResult.already_shared_with_you}`}
+                  to={`/pattern/${pendingShared.result.already_shared_with_you}`}
                   className="btn btn-outline-primary btn-sm"
                 >
                   {t("submit.viewSharedPattern")}
@@ -198,7 +233,16 @@ export default function SubmitPatternPage() {
             </Alert>
           )}
 
-          {mode === "link" ? (
+          {mode === "text" && (
+            <TextPatternForm onResult={(result, originalUrl) => goToReview({ result, originalUrl })} />
+          )}
+          {mode === "photos" && (
+            <PhotoPatternForm
+              onResult={(result, originalUrl, photo) => goToReview({ result, originalUrl, photo })}
+            />
+          )}
+
+          {mode === "link" && (
             <Form onSubmit={handleSubmit} className="mb-2" style={{ maxWidth: "32rem" }}>
               <Form.Group className="mb-3" controlId="submit-url">
                 <Form.Label>{t("submit.urlLabel")}</Form.Label>
@@ -214,7 +258,8 @@ export default function SubmitPatternPage() {
                 {loading ? t("submit.fetching") : t("submit.previewButton")}
               </Button>
             </Form>
-          ) : (
+          )}
+          {mode === "upload" && (
             <div className="mb-2" style={{ maxWidth: "32rem" }}>
               <p className="text-muted">{t("submit.uploadIntro")}</p>
               <Form onSubmit={handleUploadPreview}>

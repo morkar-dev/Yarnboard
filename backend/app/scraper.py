@@ -236,7 +236,7 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
 
     author = metadata_author.strip() if metadata_author and metadata_author.strip() else None
     if not author:
-        author = _find_author_phrase(" ".join(lines))
+        author = _find_author_phrase("\n".join(lines))
 
     materials, abbreviations, instructions = _classify_lines(lines, label_texts, {title})
 
@@ -252,6 +252,57 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
         "source_domain": domain,
         # PDFs have no og:image equivalent -- always None, never omitted,
         # so both parsers return the same shape.
+        "photo_url": None,
+    }
+
+
+MANUAL_SOURCE_PREFIX = "manual:"
+TEXT_HEADING_RE = re.compile(r"^#{1,6}\s+(.+)$")
+
+
+def parse_pattern_text(text: str, source_url: str | None = None) -> dict:
+    """
+    Pattern draft from plain text -- pasted by the user, or transcribed from
+    photos (see transcription.py). Same return shape as parse_pattern_html.
+
+    There's no styling to find part labels by, so a line counts as a label
+    when it's short and either a "# Heading" (what photo transcription
+    emits) or ends with ":" ("Body:"). Not all-caps lines: "DROPS AIR" in a
+    materials list would end the list early.
+    The first line is the title. If nothing at all looks like a section,
+    every remaining line becomes one "Instructions" part, so a plain list of
+    steps still turns into a checklist. `source_url` is optional -- a
+    pattern typed from a book has none (see submit_pattern's manual: URLs).
+    """
+    lines: list[str] = []
+    label_texts: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        heading = TEXT_HEADING_RE.match(line)
+        if heading:
+            line = heading.group(1).strip()
+        is_label = len(line) <= MAX_LABEL_LENGTH and (bool(heading) or line.endswith(":"))
+        lines.append(line)
+        if is_label:
+            label_texts.add(line)
+
+    title = lines[0] if lines else "Untitled Pattern"
+    author = _find_author_phrase("\n".join(lines))
+    materials, abbreviations, instructions = _classify_lines(lines, label_texts, {title})
+    if not materials and not abbreviations and not instructions and len(lines) > 1:
+        instructions = {"Instructions": _split_into_steps(lines[1:])}
+
+    domain = _bare_domain(source_url) if source_url else None
+    return {
+        "title": title,
+        "author": author,
+        "materials": materials,
+        "abbreviations": abbreviations,
+        "instructions": instructions,
+        "source_site_name": domain,
+        "source_domain": domain,
         "photo_url": None,
     }
 

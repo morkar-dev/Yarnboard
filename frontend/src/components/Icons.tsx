@@ -144,6 +144,26 @@ export const PhoneIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const FileIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+    <path d="M14 3v5h5" />
+  </Icon>
+);
+
+export const TextIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 6h16M4 12h16M4 18h10" />
+  </Icon>
+);
+
+export const CameraIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" />
+    <circle cx="12" cy="13.5" r="3.5" />
+  </Icon>
+);
+
 /** Decorative hero figure for the home page: a ball of yarn with a loose
  * strand running into a knitting needle. Uses the theme's eggplant shades
  * directly (not currentColor) since it's an illustration, not an icon. */

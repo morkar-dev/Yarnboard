@@ -150,14 +150,16 @@ def _build_glossary_section(glossary: dict[str, str]) -> str:
     )
 
 
-def _call_gemini(prompt: str) -> dict:
+def _call_gemini(prompt: str, *, extra_parts: list[dict] | None = None, schema: dict | None = None) -> dict:
     """
-    POST `prompt` to Gemini and return the parsed {title, materials,
-    abbreviations, instructions} response object -- the actual HTTP call,
-    retry-on-transient-failure, and response-shape handling, shared by
-    both translation directions (see module docstring). Raises
-    TranslationError if GEMINI_API_KEY isn't set, every retry is
-    exhausted, or the response doesn't parse into the expected shape.
+    POST `prompt` to Gemini and return the parsed JSON response object
+    ({title, materials, abbreviations, instructions} unless another
+    `schema` is given) -- the actual HTTP call, retry-on-transient-failure,
+    and response-shape handling, shared by both translation directions
+    (see module docstring) and by photo transcription (transcription.py,
+    which passes images as `extra_parts`). Raises TranslationError if
+    GEMINI_API_KEY isn't set, every retry is exhausted, or the response
+    doesn't parse into the expected shape.
     """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -173,10 +175,10 @@ def _call_gemini(prompt: str) -> dict:
                 url,
                 params={"key": api_key},
                 json={
-                    "contents": [{"parts": [{"text": prompt}]}],
+                    "contents": [{"parts": [{"text": prompt}, *(extra_parts or [])]}],
                     "generationConfig": {
                         "responseMimeType": "application/json",
-                        "responseSchema": _RESPONSE_SCHEMA,
+                        "responseSchema": schema or _RESPONSE_SCHEMA,
                     },
                 },
                 timeout=REQUEST_TIMEOUT_SECONDS,
