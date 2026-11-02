@@ -17,6 +17,7 @@ import io
 import ipaddress
 import re
 import socket
+import time
 from urllib.parse import unquote, urljoin, urlparse
 
 import pdfplumber
@@ -103,7 +104,7 @@ def scrape_pattern_from_url(url: str, *, allow_file: bool = False) -> dict:
     responsible for showing this to the user for review before any Pattern
     row is created. Raises ScraperError on network failure or a non-200
     response (including sites that block automated fetching -- see
-    _looks_like_bot_challenge). See parse_pattern_html for what's returned
+    looks_like_cloudflare_challenge). See parse_pattern_html for what's returned
     and how parsing failures degrade.
 
     `allow_file` gates file:// support (see _fetch_html) -- it defaults to
@@ -113,31 +114,47 @@ def scrape_pattern_from_url(url: str, *, allow_file: bool = False) -> dict:
     entry point at the bottom of this module passes allow_file=True.
     """
     return parse_pattern_html(_fetch_html(url, allow_file=allow_file), url)
+# How long a bot-detection challenge page gets to clear on its own, and how
+# long the page itself gets to load. Kept well under gunicorn's request
+# timeout (backend/gunicorn.conf.py) -- a fetch that outlives it gets killed
+# mid-request and the user sees a bare 500 instead of the friendly
+# scraper_error.
+PAGE_LOAD_TIMEOUT_MS = 15_000
+CHALLENGE_WAIT_MS = 8_000
+
+# Phrases that only appear on a challenge/block page, not on a normal page
+# that merely mentions Cloudflare in its footer.
+CHALLENGE_PHRASES = (
+    "just a moment",
+    "checking your browser",
+    "verify you are human",
+    "performing security verification",
+    "attention required",
+    "you have been blocked",
+)
+
+
 def looks_like_cloudflare_challenge(page: Page) -> bool:
     title = page.title().lower()
-    body_text = page.locator("body").inner_text(timeout=5_000).lower()
+    body_text = page.locator("body").inner_text(timeout=2_000).lower()
+    return any(phrase in title or phrase in body_text for phrase in CHALLENGE_PHRASES)
 
-    challenge_phrases = (
-        "just a moment",
-        "checking your browser",
-        "verify you are human",
-        "performing security verification",
-        "cloudflare",
-    )
 
-    return any(
-        phrase in title or phrase in body_text
-        for phrase in challenge_phrases
-    )
-def wait_for_article(page: Page) -> None:
-    try:
-        page.locator("h1").filter(
-            has_text="Rainbow Cuddles Crochet Unicorn Pattern"
-        ).wait_for(timeout=20_000)
-    except PlaywrightTimeoutError as exc:
-        raise RuntimeError(
-            "The article did not load. Cloudflare may still be blocking the page."
-        ) from exc
+def _wait_out_challenge(page: Page) -> bool:
+    """Give a challenge page up to CHALLENGE_WAIT_MS to clear itself (some
+    JS challenges pass on their own and redirect to the real page). True
+    once the real page is showing."""
+    deadline = time.monotonic() + CHALLENGE_WAIT_MS / 1000
+    while time.monotonic() < deadline:
+        page.wait_for_timeout(1_000)
+        try:
+            if not looks_like_cloudflare_challenge(page):
+                return True
+        except Exception:
+            # The challenge redirecting mid-check destroys the page's JS
+            # context -- just look again next round.
+            continue
+    return False
 
 
 def parse_pattern_html(html: str, source_url: str) -> dict:
@@ -408,23 +425,22 @@ def _fetch_html(url: str, *, allow_file: bool = False) -> str:
             route.continue_() if _is_request_allowed(route.request.url) else route.abort()
         ))
         try:
-            response = page.goto(url, timeout=30_000, wait_until="domcontentloaded")
+            response = page.goto(url, timeout=PAGE_LOAD_TIMEOUT_MS, wait_until="domcontentloaded")
 
             if looks_like_cloudflare_challenge(page):
-                wait_for_article(page)
-
-            if response is None or not response.ok:
-                if looks_like_cloudflare_challenge(page):
+                if not _wait_out_challenge(page):
                     raise ScraperError(
                         f"{url} is protected by a bot-detection service (e.g. Cloudflare) that "
-                        "blocks automated fetching. Yarnboard tried to wait for the challenge to "
-                        "complete, but it may have failed or timed out. You can try saving "
-                        "the page's HTML yourself and using the file upload option instead."
+                        "blocks automated fetching. You can try saving the page's HTML "
+                        "yourself and using the file upload option instead."
                     )
+            elif response is None or not response.ok:
                 status = response.status if response else "unknown"
                 raise ScraperError(f"{url} returned HTTP {status}")
 
             content = page.content()
+        except ScraperError:
+            raise
         except PlaywrightTimeoutError as exc:
             raise ScraperError(f"Timed out trying to fetch {url}") from exc
         except Exception as exc:

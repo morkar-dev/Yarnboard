@@ -11,7 +11,8 @@ import { ApiError } from "../api/client";
  * per-request server-side, not a fixed string a resource file could
  * translate -- those fall through to the raw `err.message` regardless
  * of UI language. `fallback` covers the non-ApiError case (a network
- * failure, an unparseable response, etc.), and should itself be a
+ * failure, an unparseable response, etc.) and a 5xx with no code (a
+ * server or proxy error page rather than one of our JSON errors), and should itself be a
  * `t("...")` call at the caller so it's localized too.
  */
 export function useApiErrorMessage() {
@@ -19,6 +20,10 @@ export function useApiErrorMessage() {
 
   return (err: unknown, fallback: string): string => {
     if (err instanceof ApiError) {
+      // A 5xx with no code never came from our own error handling (a
+      // gunicorn worker timeout, a proxy error page) -- its text is just
+      // "Internal Server Error" or similar, so use the caller's fallback.
+      if (!err.code && err.status >= 500) return fallback;
       if (err.code && i18n.exists(`errors.${err.code}`)) {
         return t(`errors.${err.code}`, err.params);
       }
