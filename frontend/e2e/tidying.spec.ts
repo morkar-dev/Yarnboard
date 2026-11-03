@@ -29,7 +29,7 @@ test.beforeAll(async () => {
       title: TITLE,
       author: "Tidy Author",
       materials: "- Yarn: [Drops Air](https://example.com/drops-air), 2 skeins\n- 4mm needles",
-      abbreviations: "k = knit",
+      abbreviations: "k = knit\n* = repeat from *",
       instructions: {
         Body: [
           "# Brim",
@@ -218,13 +218,29 @@ test.describe("submitting a pattern", () => {
 });
 
 test.describe("pattern page as a guest", () => {
-  test("materials are a list with working source links", async ({ page }) => {
+  test("materials can be ticked off, keep their source links, and stay ticked after a reload", async ({ page }) => {
     await page.goto(`/pattern/${patternId}`);
-    const items = page.locator(".materials-list li");
-    await expect(items).toHaveCount(2);
+    const materials = page.locator(".materials-checklist").getByRole("checkbox");
+    await expect(materials).toHaveCount(2);
     const link = page.getByRole("link", { name: "Drops Air" });
     await expect(link).toHaveAttribute("href", "https://example.com/drops-air");
     await expect(link).toHaveAttribute("target", "_blank");
+
+    const needles = page.getByRole("checkbox", { name: "4mm needles" });
+    await needles.check();
+    await page.reload();
+    await expect(page.getByRole("checkbox", { name: "4mm needles" })).toBeChecked();
+    await expect(materials.first()).not.toBeChecked();
+    // Ticking a material isn't instruction progress.
+    await expect(page.getByRole("button", { name: "Clear all checks" })).toBeDisabled();
+  });
+
+  test("abbreviations are a plain list with nothing to tick", async ({ page }) => {
+    await page.goto(`/pattern/${patternId}`);
+    const items = page.locator(".abbreviations-list li");
+    // A leading "*" is the symbol being defined, not a bullet -- kept.
+    await expect(items).toHaveText(["k = knit", "* = repeat from *"]);
+    await expect(page.locator(".abbreviations-list").getByRole("checkbox")).toHaveCount(0);
   });
 
   test("headings and notes have no checkbox; real steps do", async ({ page }) => {
@@ -233,7 +249,9 @@ test.describe("pattern page as a guest", () => {
     await expect(page.getByRole("heading", { name: "Crown" })).toBeVisible();
     await expect(page.getByText("Use the smaller needles here.")).toBeVisible();
     await expect(page.getByText("Note: decrease evenly.")).toBeVisible();
-    await expect(page.getByRole("checkbox")).toHaveCount(3);
+    // 3 steps, plus the 2 materials' own tick boxes.
+    await expect(page.getByRole("checkbox")).toHaveCount(5);
+    await expect(page.locator(".materials-checklist").getByRole("checkbox")).toHaveCount(2);
   });
 
   test("the row counter counts up to the range, survives a reload, and Clear all resets everything", async ({ page }) => {

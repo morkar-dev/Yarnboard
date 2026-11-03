@@ -100,10 +100,18 @@ export function renderInlineLinks(text: string): ReactNode[] {
   return nodes;
 }
 
-/** Materials text -> one list item per non-empty line, bullets stripped. */
-export function parseMaterials(text: string): string[] {
+/** Materials text -> one list item per non-empty line, bullets and
+ * numbering stripped (they're just list formatting there). */
+export function parseListItems(text: string): string[] {
+  return parseLines(text).map((line) => line.replace(/^(?:[-*•·]|\d+[.)])\s+/, "").trim()).filter(Boolean);
+}
+
+/** One entry per non-empty line, kept exactly as written apart from
+ * surrounding whitespace -- for abbreviations, where a leading "*" or "-"
+ * is often the symbol being defined ("* = repeat from"), not a bullet. */
+export function parseLines(text: string): string[] {
   return text
     .split("\n")
-    .map((line) => line.replace(/^\s*(?:[-*•·]|\d+[.)])\s+/, "").trim())
+    .map((line) => line.trim())
     .filter(Boolean);
 }
