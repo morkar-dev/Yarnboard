@@ -129,6 +129,7 @@ export default function PatternReviewForm({ draft, onChange }: Props) {
               addLabel={t("reviewForm.addMaterial")}
               inputLabel={(number) => t("reviewForm.materialAria", { number })}
               deleteLabel={(number) => t("reviewForm.deleteMaterialAria", { number })}
+              keepOneLine
             />
           </Card.Body>
         </Card>

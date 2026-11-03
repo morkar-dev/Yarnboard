@@ -17,14 +17,22 @@ interface Props {
    * delete button. */
   inputLabel: (number: number) => string;
   deleteLabel: (number: number) => string;
+  /** For a field stored as one string (materials), where no lines and one
+   * empty line are the same value: "" always reads back as [""], so
+   * deleting that sole empty line would do nothing visible. Its delete
+   * button is hidden instead. Instruction steps don't need this -- a part
+   * can genuinely have zero steps. */
+  keepOneLine?: boolean;
 }
 
-export default function StepListEditor({ lines, onChange, addLabel, inputLabel, deleteLabel }: Props) {
+export default function StepListEditor({ lines, onChange, addLabel, inputLabel, deleteLabel, keepOneLine = false }: Props) {
   const { t } = useTranslation();
 
   function update(index: number, text: string) {
     onChange(lines.map((line, i) => (i === index ? text : line)));
   }
+
+  const soleEmptyLine = keepOneLine && lines.length === 1 && lines[0] === "";
 
   return (
     <>
@@ -36,14 +44,16 @@ export default function StepListEditor({ lines, onChange, addLabel, inputLabel, 
             aria-label={inputLabel(index + 1)}
             onChange={(e) => update(index, e.target.value)}
           />
-          <Button
-            variant="outline-secondary"
-            onClick={() => onChange(lines.filter((_, i) => i !== index))}
-            title={deleteLabel(index + 1)}
-            aria-label={deleteLabel(index + 1)}
-          >
-            &times;
-          </Button>
+          {!soleEmptyLine && (
+            <Button
+              variant="outline-secondary"
+              onClick={() => onChange(lines.filter((_, i) => i !== index))}
+              title={deleteLabel(index + 1)}
+              aria-label={deleteLabel(index + 1)}
+            >
+              &times;
+            </Button>
+          )}
         </InputGroup>
       ))}
       <div className="d-flex flex-wrap gap-2">

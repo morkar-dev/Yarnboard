@@ -204,11 +204,9 @@ test.describe("submitting a pattern", () => {
     const materials = page.getByRole("group", { name: "Materials" });
     await expect(materials.getByLabel("Material 1", { exact: true })).toHaveValue("Yarn: [Drops Air](https://example.com/shop/drops-air)");
     await expect(materials.getByLabel("Material 2", { exact: true })).toHaveValue("4mm needles");
-    const stepValues = () => page.locator("input[type=text], input:not([type])").evaluateAll(
-      (inputs) => inputs.map((input) => (input as HTMLInputElement).value),
-    );
-    // Instructions keep plain text only.
-    expect(await stepValues()).toContain("Cast on using the long-tail method.");
+    // Each step has its own label, so these checks can't be satisfied by
+    // the materials editor's inputs. Instructions keep plain text only.
+    await expect(page.getByLabel(/^Step 1 of /)).toHaveValue("Cast on using the long-tail method.");
 
     await materials.getByRole("button", { name: "+ Add heading" }).click();
     await expect(materials.getByLabel("Material 3", { exact: true })).toHaveValue("## ");
@@ -219,9 +217,9 @@ test.describe("submitting a pattern", () => {
 
     // The instruction part's own buttons (after the materials').
     await page.getByRole("button", { name: "+ Add heading" }).last().click();
-    await expect.poll(stepValues).toContain("## ");
+    await expect(page.getByLabel(/^Step 2 of /)).toHaveValue("## ");
     await page.getByRole("button", { name: "+ Add note" }).last().click();
-    await expect.poll(stepValues).toContain("> ");
+    await expect(page.getByLabel(/^Step 3 of /)).toHaveValue("> ");
   });
 });
 
