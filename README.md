@@ -266,9 +266,9 @@ domain. That's required, not just tidy -- with the API called directly on
 Safari (and every iOS browser) drops, so login appears to work and then
 every call 401s.
 
-Two stages, **two separate Cloudflare projects**, one shared Render
-backend (there's no separate staging API today -- both stages call the
-same one):
+Two stages, each with **its own Cloudflare project and its own Render
+backend** -- the dev Worker proxies to a dev API built from `dev`, so
+backend changes can be tried on the dev site before they reach prod:
 
 |                    | **prod**                          | **dev**                                    |
 | ------------------ | ---------------------------------- | ------------------------------------------- |
@@ -277,16 +277,30 @@ same one):
 | Deploy command      | `npx wrangler deploy --env=""`     | `npx wrangler deploy --env dev`             |
 | Served at           | your custom domain                 | the auto-generated `yarnboard-dev.<your-subdomain>.workers.dev` |
 | `VITE_API_BASE_URL` | **unset** (relative `/api` via the proxy) | **unset**                           |
+| Render backend (`API_ORIGIN`) | `yarnboard` -- `https://yarnboard.onrender.com`, from `main` (`wrangler.jsonc`'s top-level `vars`) | `yarnboard-dev-api` -- `https://yarnboard-dev-api.onrender.com`, from `dev` (`env.dev.vars`; branch previews use it too) |
 
 A single project can't safely cover both: Cloudflare's git integration
 deploys whatever branch triggers a build to the Worker name in
 `wrangler.jsonc`, so without the separate `env.dev`/`--env dev` config
 above, a `dev` push would silently overwrite the live prod Worker.
 
-1. Deploy the backend to Render as above, twice: one service built from
-   `main` (prod, e.g. `https://yarnboard.onrender.com`) and one built from
-   `dev` with auto-deploy on (`https://yarnboard-dev-api.onrender.com`),
-   each with its own environment variables.
+1. Deploy both backends to Render:
+   - **Prod (`yarnboard`)**: the Blueprint in "Deploying to Render" above
+     -- `render.yaml` defines only this one service.
+   - **Dev (`yarnboard-dev-api`)**: create it by hand (not through the
+     Blueprint, which would only create a second `yarnboard`). In the
+     Render dashboard: **New -> Web Service**, pick this repo, then:
+     - Name: `yarnboard-dev-api` (this sets its URL,
+       `https://yarnboard-dev-api.onrender.com`)
+     - Branch: `dev`, with Auto-Deploy **On Commit**
+     - Runtime Python, and the same Build and Start commands as prod
+       (step 2 of "Deploying to Render")
+     - Environment: the same variables as prod (step 3 there), except
+       `DATABASE_URL` -- point it at a separate database (e.g. a Neon
+       branch) so dev data stays out of prod, and run `init-db` against
+       it once (step 4) -- and `PUBLIC_APP_URL`, which should be the dev
+       site (`https://yarnboard-dev.<your-subdomain>.workers.dev`) so
+       email links open there.
 2. Point `API_ORIGIN` in `wrangler.jsonc` at them: the default config at
    the prod service, `env.dev` and `previews` at the dev one.
    `CORS_ORIGINS` on Render isn't needed for this setup -- the proxy
