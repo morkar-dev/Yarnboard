@@ -223,10 +223,14 @@
     "deleteStepAria": "מחיקת שלב {{number}} מתוך \"{{part}}\"",
     "addStep": "+ הוספת שלב",
     "addPart": "+ הוספת חלק",
-    "materialsHint": "פריט אחד בכל שורה. להוספת קישור: [שם](https://...).",
+    "materialsHint": "פריט אחד בכל שורה. להוספת קישור: [שם](https://...). כותרות (#) והערות (>) עובדות כמו בהוראות.",
     "instructionsHint": "התחילו שורה ב-# (או ##, ###...) לכותרת, או ב-> להערה - לשתיהן אין תיבת סימון. שלבים שמתחילים בטווח שורות כמו \"5-10\" מקבלים מונה שורות.",
     "addHeading": "+ הוספת כותרת",
-    "addNote": "+ הוספת הערה"
+    "addNote": "+ הוספת הערה",
+    "addMaterial": "+ הוספת חומר",
+    "materialAria": "חומר {{number}}",
+    "deleteMaterialAria": "מחיקת חומר {{number}}",
+    "stepAria": "שלב {{number}} מתוך \"{{part}}\""
   },
   "patternDetail": {
     "edit": "עריכה",

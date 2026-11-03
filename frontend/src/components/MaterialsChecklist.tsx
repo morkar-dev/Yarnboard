@@ -1,8 +1,9 @@
 /**
- * A pattern's materials as tick-off items, one per line (see
- * utils/patternText's parseListItems), so supplies can be gathered the same
- * way instructions are worked through. "[name](url)" links (kept by the
- * scraper, or typed by an editor) stay real links in the label.
+ * A pattern's materials, shown like an instruction part (see
+ * PatternChecklist): one tick-off item per line (utils/patternText's
+ * parseListItems), while "#" heading and "> " note lines render as
+ * headings and notes with no checkbox. "[name](url)" links (kept by the
+ * scraper, or typed by an editor) stay real links.
  *
  * Ticks live in this browser only (see utils/materialChecks for why they
  * aren't synced like instruction progress). They're keyed by the
@@ -10,10 +11,11 @@
  * `displayText`, when given, only replaces what's shown, matched by line
  * index -- the same overlay rule PatternChecklist uses for steps.
  */
-import { useState } from "react";
+import { createElement, useState } from "react";
 import { Form } from "react-bootstrap";
 import { getMaterialChecks, setMaterialChecks } from "../utils/materialChecks";
-import { parseListItems, renderInlineLinks } from "../utils/patternText";
+import { parseListItems, parseStep, renderInlineLinks, stripStepMarker } from "../utils/patternText";
+import { NoteIcon } from "./Icons";
 
 interface Props {
   patternId: number;
@@ -41,17 +43,39 @@ export default function MaterialsChecklist({ patternId, materials, displayText }
 
   return (
     <div className="materials-checklist d-flex flex-column gap-2" dir="auto">
-      {items.map((item, i) => (
-        <Form.Check
-          key={`${i}-${item}`}
-          type="checkbox"
-          id={`material-${i}`}
-          label={renderInlineLinks(labels[i])}
-          dir="auto"
-          checked={checked.has(item)}
-          onChange={(e) => toggle(item, e.target.checked)}
-        />
-      ))}
+      {items.map((item, i) => {
+        // The line's kind comes from the primary text, like a step's.
+        const parsed = parseStep(item);
+        const text = labels === items ? parsed.text : stripStepMarker(labels[i]);
+        if (parsed.kind === "heading") {
+          // Same heading levels as PatternChecklist uses for steps.
+          const tag = `h${Math.min(parsed.level + 2, 6)}`;
+          return createElement(
+            tag,
+            { key: `${i}-${item}`, dir: "auto", className: `checklist-heading checklist-heading-${parsed.level} mb-0 mt-2` },
+            renderInlineLinks(text),
+          );
+        }
+        if (parsed.kind === "note") {
+          return (
+            <div key={`${i}-${item}`} className="checklist-note d-flex gap-2 small" dir="auto">
+              <NoteIcon size={16} className="flex-shrink-0 mt-1" />
+              <span>{renderInlineLinks(text)}</span>
+            </div>
+          );
+        }
+        return (
+          <Form.Check
+            key={`${i}-${item}`}
+            type="checkbox"
+            id={`material-${i}`}
+            label={renderInlineLinks(text)}
+            dir="auto"
+            checked={checked.has(item)}
+            onChange={(e) => toggle(item, e.target.checked)}
+          />
+        );
+      })}
     </div>
   );
 }

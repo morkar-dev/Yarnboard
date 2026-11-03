@@ -222,10 +222,14 @@
     "deleteStepAria": "Delete step {{number}} of \"{{part}}\"",
     "addStep": "+ Add step",
     "addPart": "+ Add part",
-    "materialsHint": "One item per line. Add a link with [name](https://...).",
+    "materialsHint": "One item per line. Add a link with [name](https://...). Headings (#) and notes (>) work the same as in the instructions.",
     "instructionsHint": "Start a line with # (or ##, ###...) for a heading, or > for a note - neither gets a checkbox. Steps starting with a row range like \"5-10\" get a row counter.",
     "addHeading": "+ Add heading",
-    "addNote": "+ Add note"
+    "addNote": "+ Add note",
+    "addMaterial": "+ Add material",
+    "materialAria": "Material {{number}}",
+    "deleteMaterialAria": "Delete material {{number}}",
+    "stepAria": "Step {{number}} of \"{{part}}\""
   },
   "patternDetail": {
     "edit": "Edit",

@@ -42,7 +42,7 @@ test("pasted text becomes a pattern with sections, parts, and no source link", a
   await expect(page).toHaveURL(/\/submit\/review$/);
   await expect(page.getByText("No original link - this pattern will be saved without one.")).toBeVisible();
   await expect(page.getByLabel("Title")).toHaveValue("E2E Pasted Beanie");
-  await expect(page.getByLabel("Materials")).toHaveValue("- 2 skeins of yarn");
+  await expect(page.getByRole("group", { name: "Materials" }).getByLabel("Material 1", { exact: true })).toHaveValue("- 2 skeins of yarn");
 
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/\/pattern\/\d+$/);

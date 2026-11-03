@@ -28,7 +28,7 @@ test.beforeAll(async () => {
       original_url: "https://example.com/e2e-tidying-pattern",
       title: TITLE,
       author: "Tidy Author",
-      materials: "- Yarn: [Drops Air](https://example.com/drops-air), 2 skeins\n- 4mm needles",
+      materials: "## Supplies\n- Yarn: [Drops Air](https://example.com/drops-air), 2 skeins\n- 4mm needles\n> Any DK yarn works.",
       abbreviations: "k = knit\n* = repeat from *",
       instructions: {
         Body: [
@@ -200,19 +200,27 @@ test.describe("submitting a pattern", () => {
     });
     await page.getByRole("button", { name: "Preview from file" }).click();
 
-    const materials = page.getByLabel("Materials");
-    await expect(materials).toHaveValue(
-      "Yarn: [Drops Air](https://example.com/shop/drops-air)\n4mm needles",
-    );
+    // Materials are edited line by line, like steps.
+    const materials = page.getByRole("group", { name: "Materials" });
+    await expect(materials.getByLabel("Material 1", { exact: true })).toHaveValue("Yarn: [Drops Air](https://example.com/shop/drops-air)");
+    await expect(materials.getByLabel("Material 2", { exact: true })).toHaveValue("4mm needles");
     const stepValues = () => page.locator("input[type=text], input:not([type])").evaluateAll(
       (inputs) => inputs.map((input) => (input as HTMLInputElement).value),
     );
     // Instructions keep plain text only.
     expect(await stepValues()).toContain("Cast on using the long-tail method.");
 
-    await page.getByRole("button", { name: "+ Add heading" }).click();
+    await materials.getByRole("button", { name: "+ Add heading" }).click();
+    await expect(materials.getByLabel("Material 3", { exact: true })).toHaveValue("## ");
+    await materials.getByRole("button", { name: "+ Add note" }).click();
+    await expect(materials.getByLabel("Material 4", { exact: true })).toHaveValue("> ");
+    await materials.getByRole("button", { name: "Delete material 4" }).click();
+    await expect(materials.getByLabel("Material 4", { exact: true })).toHaveCount(0);
+
+    // The instruction part's own buttons (after the materials').
+    await page.getByRole("button", { name: "+ Add heading" }).last().click();
     await expect.poll(stepValues).toContain("## ");
-    await page.getByRole("button", { name: "+ Add note" }).click();
+    await page.getByRole("button", { name: "+ Add note" }).last().click();
     await expect.poll(stepValues).toContain("> ");
   });
 });
@@ -221,7 +229,10 @@ test.describe("pattern page as a guest", () => {
   test("materials can be ticked off, keep their source links, and stay ticked after a reload", async ({ page }) => {
     await page.goto(`/pattern/${patternId}`);
     const materials = page.locator(".materials-checklist").getByRole("checkbox");
+    // Like instructions: the heading and the note get no tick box.
     await expect(materials).toHaveCount(2);
+    await expect(page.locator(".materials-checklist").getByRole("heading", { name: "Supplies" })).toBeVisible();
+    await expect(page.locator(".materials-checklist .checklist-note")).toHaveText("Any DK yarn works.");
     const link = page.getByRole("link", { name: "Drops Air" });
     await expect(link).toHaveAttribute("href", "https://example.com/drops-air");
     await expect(link).toHaveAttribute("target", "_blank");
@@ -235,9 +246,9 @@ test.describe("pattern page as a guest", () => {
     await expect(page.getByRole("button", { name: "Clear all checks" })).toBeDisabled();
   });
 
-  test("abbreviations are a plain list with nothing to tick", async ({ page }) => {
+  test("abbreviations show like the instructions' notes, with nothing to tick", async ({ page }) => {
     await page.goto(`/pattern/${patternId}`);
-    const items = page.locator(".abbreviations-list li");
+    const items = page.locator(".abbreviations-list .checklist-note");
     // A leading "*" is the symbol being defined, not a bullet -- kept.
     await expect(items).toHaveText(["k = knit", "* = repeat from *"]);
     await expect(page.locator(".abbreviations-list").getByRole("checkbox")).toHaveCount(0);
