@@ -131,3 +131,25 @@ def test_the_scrape_budget_stays_under_gunicorns_timeout():
     exec((Path(__file__).parents[1] / "gunicorn.conf.py").read_text(), config)
     worst_case_s = (scraper.PAGE_LOAD_TIMEOUT_MS + scraper.CHALLENGE_WAIT_MS) / 1000
     assert worst_case_s + 15 < config["timeout"]  # room for browser launch etc.
+
+
+def test_a_normal_page_whose_text_says_just_a_moment_is_not_a_challenge(fake_browser, monkeypatch):
+    # Review finding: body phrases on a 200 page used to trigger the wait
+    # and then the bot-detection error.
+    monkeypatch.setattr(scraper, "CHALLENGE_WAIT_MS", 5_000)
+    fake_browser(200, [("Granny Square Blanket", "Just a moment while the yarn dries -- you have been blocked from frogging!")])
+    start = time.monotonic()
+    assert "Granny Square Blanket" in _fetch_html("https://example.com/blanket")
+    assert time.monotonic() - start < 1
+
+
+def test_a_hard_block_with_an_ordinary_title_fails_at_once_as_bot_detection(fake_browser):
+    fake_browser(403, [("Access denied", "Sorry, you have been blocked. Ray ID: abc")])
+    with pytest.raises(ScraperError, match="bot-detection"):
+        _fetch_html("https://blocked.example.com/pattern")
+
+
+def test_block_phrases_deep_in_an_error_page_dont_count(fake_browser):
+    fake_browser(403, [("Forbidden", "x" * 2_000 + " you have been blocked")])
+    with pytest.raises(ScraperError, match="returned HTTP 403"):
+        _fetch_html("https://example.com/private")

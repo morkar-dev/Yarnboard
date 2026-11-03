@@ -122,22 +122,41 @@ def scrape_pattern_from_url(url: str, *, allow_file: bool = False) -> dict:
 PAGE_LOAD_TIMEOUT_MS = 15_000
 CHALLENGE_WAIT_MS = 8_000
 
-# Phrases that only appear on a challenge/block page, not on a normal page
-# that merely mentions Cloudflare in its footer.
-CHALLENGE_PHRASES = (
+# A challenge page announces itself in its <title> ("Just a moment...",
+# "Attention Required! | Cloudflare"), so the title alone decides whether
+# to wait for one to clear -- a real page whose copy happens to say "just a
+# moment" mustn't be mistaken for one.
+CHALLENGE_TITLE_PHRASES = (
     "just a moment",
+    "attention required",
     "checking your browser",
+    "security verification",
+)
+# Only consulted when the response was already an error (see _fetch_html),
+# and only near the top of the page, where a block page states it.
+BLOCK_BODY_PHRASES = (
     "verify you are human",
     "performing security verification",
-    "attention required",
     "you have been blocked",
+    "checking your browser",
 )
+BLOCK_BODY_PREFIX_CHARS = 1_000
 
 
 def looks_like_cloudflare_challenge(page: Page) -> bool:
     title = page.title().lower()
-    body_text = page.locator("body").inner_text(timeout=2_000).lower()
-    return any(phrase in title or phrase in body_text for phrase in CHALLENGE_PHRASES)
+    return any(phrase in title for phrase in CHALLENGE_TITLE_PHRASES)
+
+
+def _error_page_looks_blocked(page: Page) -> bool:
+    """For a non-OK response whose title gave nothing away: does the top of
+    the page read like a bot block rather than an ordinary 403/404?"""
+    try:
+        body = page.locator("body").inner_text(timeout=2_000)
+    except Exception:
+        return False
+    head = body[:BLOCK_BODY_PREFIX_CHARS].lower()
+    return any(phrase in head for phrase in BLOCK_BODY_PHRASES)
 
 
 def _wait_out_challenge(page: Page) -> bool:
@@ -427,14 +446,18 @@ def _fetch_html(url: str, *, allow_file: bool = False) -> str:
         try:
             response = page.goto(url, timeout=PAGE_LOAD_TIMEOUT_MS, wait_until="domcontentloaded")
 
+            blocked = ScraperError(
+                f"{url} is protected by a bot-detection service (e.g. Cloudflare) that "
+                "blocks automated fetching. You can try saving the page's HTML "
+                "yourself and using the file upload option instead."
+            )
             if looks_like_cloudflare_challenge(page):
                 if not _wait_out_challenge(page):
-                    raise ScraperError(
-                        f"{url} is protected by a bot-detection service (e.g. Cloudflare) that "
-                        "blocks automated fetching. You can try saving the page's HTML "
-                        "yourself and using the file upload option instead."
-                    )
+                    raise blocked
             elif response is None or not response.ok:
+                # A hard block (no challenge to wait out) fails at once.
+                if _error_page_looks_blocked(page):
+                    raise blocked
                 status = response.status if response else "unknown"
                 raise ScraperError(f"{url} returned HTTP {status}")
 
