@@ -13,13 +13,14 @@
   // execute) and renders a blank page. This file pins the real output
   // directory so that can't happen again.
   //
-  // Two stages, one Render backend: this default (unnamed) config is
-  // "prod" -- deployed from `main`, meant for the real custom domain.
+  // Two stages, two Render backends: this default (unnamed) config is
+  // "prod" -- deployed from `main`, meant for the real custom domain, and
+  // proxying to the prod API (yarnboard.onrender.com, built from `main`).
   // `env.dev` below is a second, separate Worker (own name, own
   // workers.dev URL) deployed from `dev` via a *separate* Cloudflare
-  // project so a `dev` push can never overwrite the prod Worker. Both
-  // stages call the same Render API (see README) -- there's no separate
-  // staging backend today, so there's nothing here to override for that.
+  // project so a `dev` push can never overwrite the prod Worker; it
+  // proxies to yarnboard-dev-api.onrender.com, the Render service built
+  // from `dev`, so backend changes on `dev` are testable before `main`.
   "name": "yarnboard",
   "compatibility_date": "2026-09-09",
   // Proxies /api/* to the Render backend so the API is same-origin with
@@ -30,11 +31,11 @@
     "API_ORIGIN": "https://yarnboard.onrender.com"
   },
   // Cloudflare's non-production branch builds run `wrangler preview`, which
-  // refuses to start without its own vars. There's no staging API, so
-  // previews share the same Render backend as prod and dev.
+  // refuses to start without its own vars. Previews are of unmerged
+  // branches, so they get the dev API, never prod's.
   "previews": {
     "vars": {
-      "API_ORIGIN": "https://yarnboard.onrender.com"
+      "API_ORIGIN": "https://yarnboard-dev-api.onrender.com"
     }
   },
   // Wrangler runs this itself before every deploy/preview/dev, so a
@@ -75,9 +76,9 @@
       // (yarnboard-dev.<your-subdomain>.workers.dev), so this can never
       // collide with or overwrite the prod deployment above.
       "name": "yarnboard-dev",
-      // `vars` isn't inherited by named environments -- repeat it.
+      // `vars` isn't inherited by named environments -- set its own.
       "vars": {
-        "API_ORIGIN": "https://yarnboard.onrender.com"
+        "API_ORIGIN": "https://yarnboard-dev-api.onrender.com"
       }
     }
   }

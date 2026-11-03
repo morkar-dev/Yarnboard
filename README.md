@@ -283,16 +283,19 @@ deploys whatever branch triggers a build to the Worker name in
 `wrangler.jsonc`, so without the separate `env.dev`/`--env dev` config
 above, a `dev` push would silently overwrite the live prod Worker.
 
-1. Deploy the backend to Render as above (or point at an existing
-   deployment) -- note its URL, e.g. `https://yarnboard.onrender.com`.
-2. Point `API_ORIGIN` in `wrangler.jsonc` (both the default config and
-   `env.dev`) at that Render URL. `CORS_ORIGINS` on Render isn't needed
-   for this setup -- the proxy strips the `Origin` header, since the
-   browser's request is same-origin.
-   Then pick one long random string and set it in three places as
-   `PROXY_SHARED_SECRET`: on Render (Environment), and as a secret on both
-   Workers -- `npx wrangler secret put PROXY_SHARED_SECRET` and
-   `npx wrangler secret put PROXY_SHARED_SECRET --env dev`. It lets the
+1. Deploy the backend to Render as above, twice: one service built from
+   `main` (prod, e.g. `https://yarnboard.onrender.com`) and one built from
+   `dev` with auto-deploy on (`https://yarnboard-dev-api.onrender.com`),
+   each with its own environment variables.
+2. Point `API_ORIGIN` in `wrangler.jsonc` at them: the default config at
+   the prod service, `env.dev` and `previews` at the dev one.
+   `CORS_ORIGINS` on Render isn't needed for this setup -- the proxy
+   strips the `Origin` header, since the browser's request is same-origin.
+   Then set `PROXY_SHARED_SECRET` (a long random string) on each Render
+   service (Environment) and as a secret on the Worker in front of it --
+   `npx wrangler secret put PROXY_SHARED_SECRET` for prod and
+   `npx wrangler secret put PROXY_SHARED_SECRET --env dev` for dev. Each
+   Worker's value must match its own backend's. It lets the
    backend trust the visitor IP the Worker forwards (see `client_ip()` in
    `backend/app/extensions.py`); without it, every visitor coming through
    the Worker shares one login/register rate-limit bucket.
