@@ -32,7 +32,7 @@ import PatternVisibilityPanel from "../components/PatternVisibilityPanel";
 import { useAuth } from "../context/AuthContext";
 import { useApiErrorMessage } from "../i18n/useApiErrorMessage";
 import type { Pattern } from "../types/models";
-import { parseListItems, renderInlineLinks } from "../utils/patternText";
+import { parseLines, renderInlineLinks } from "../utils/patternText";
 import { translationForUiLanguage } from "../utils/patternTranslation";
 
 /** Hebrew Unicode block -- used as a lightweight, purely-client-side
@@ -186,10 +186,11 @@ export default function PatternDetailPage() {
 
       {abbreviations && (
         <CollapsibleCard title={t("patternDetail.abbreviations")}>
-          {/* A plain reference list, one abbreviation per line -- nothing
-              to tick off. */}
+          {/* A plain reference list, one abbreviation per line as
+              written -- nothing to tick off, and no bullet stripping,
+              since "* = repeat from" defines the "*". */}
           <ul className="abbreviations-list list-unstyled mb-0" dir="auto">
-            {parseListItems(abbreviations).map((item, i) => (
+            {parseLines(abbreviations).map((item, i) => (
               <li key={i}>{renderInlineLinks(item)}</li>
             ))}
           </ul>

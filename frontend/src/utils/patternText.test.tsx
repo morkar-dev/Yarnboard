@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { parseListItems, parseRepeat, parseStep, renderInlineLinks, stripStepMarker } from "./patternText";
+import { parseLines, parseListItems, parseRepeat, parseStep, renderInlineLinks, stripStepMarker } from "./patternText";
 
 describe("parseStep", () => {
   it("reads every heading level from its # count", () => {
@@ -46,6 +46,15 @@ describe("parseRepeat", () => {
 describe("materials", () => {
   it("splits lines and strips bullets", () => {
     expect(parseListItems("- Yarn\n\n• 4mm needles\n1. Scissors")).toEqual(["Yarn", "4mm needles", "Scissors"]);
+  });
+
+  it("keeps abbreviation lines as written, symbols included", () => {
+    expect(parseLines("* = repeat from\n\n  - = decrease  \n1. = first row\nk = knit")).toEqual([
+      "* = repeat from",
+      "- = decrease",
+      "1. = first row",
+      "k = knit",
+    ]);
   });
 
   it("renders http(s) markdown links only", () => {

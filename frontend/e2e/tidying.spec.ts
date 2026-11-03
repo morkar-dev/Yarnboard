@@ -29,7 +29,7 @@ test.beforeAll(async () => {
       title: TITLE,
       author: "Tidy Author",
       materials: "- Yarn: [Drops Air](https://example.com/drops-air), 2 skeins\n- 4mm needles",
-      abbreviations: "k = knit",
+      abbreviations: "k = knit\n* = repeat from *",
       instructions: {
         Body: [
           "# Brim",
@@ -238,7 +238,8 @@ test.describe("pattern page as a guest", () => {
   test("abbreviations are a plain list with nothing to tick", async ({ page }) => {
     await page.goto(`/pattern/${patternId}`);
     const items = page.locator(".abbreviations-list li");
-    await expect(items).toHaveText(["k = knit"]);
+    // A leading "*" is the symbol being defined, not a bullet -- kept.
+    await expect(items).toHaveText(["k = knit", "* = repeat from *"]);
     await expect(page.locator(".abbreviations-list").getByRole("checkbox")).toHaveCount(0);
   });
 
