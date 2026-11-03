@@ -44,4 +44,11 @@ describe("MaterialsChecklist", () => {
     render(<MaterialsChecklist patternId={1} materials={MATERIALS} displayText="- רק שורה אחת" />);
     expect(screen.getByRole("checkbox", { name: "4mm needles" })).toBeInTheDocument();
   });
+
+  it("shows headings and notes like the instructions, with no tick box", () => {
+    render(<MaterialsChecklist patternId={1} materials={"## Yarn\n- Drops Air\n> Any DK works"} />);
+    expect(screen.getByRole("heading", { name: "Yarn" })).toBeInTheDocument();
+    expect(screen.getByText("Any DK works")).toBeInTheDocument();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+  });
 });

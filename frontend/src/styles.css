@@ -136,9 +136,6 @@ textarea {
 }
 
 /* --- Pattern page (PatternDetailPage / PatternChecklist) -------------- */
-.abbreviations-list li + li {
-  margin-top: 0.25rem;
-}
 .checklist-heading {
   color: var(--yb-eggplant-dark);
   font-weight: 600;

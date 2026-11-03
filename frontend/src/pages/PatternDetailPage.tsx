@@ -25,6 +25,7 @@ import { Link, useParams } from "react-router-dom";
 import { fetchPattern, resolvePhotoUrl, translatePattern, translatePatternToEnglish } from "../api/client";
 import AttributionTag from "../components/AttributionTag";
 import CollapsibleCard from "../components/CollapsibleCard";
+import { NoteIcon } from "../components/Icons";
 import PatternChartGrid from "../components/PatternChartGrid";
 import MaterialsChecklist from "../components/MaterialsChecklist";
 import PatternChecklist from "../components/PatternChecklist";
@@ -186,14 +187,17 @@ export default function PatternDetailPage() {
 
       {abbreviations && (
         <CollapsibleCard title={t("patternDetail.abbreviations")}>
-          {/* A plain reference list, one abbreviation per line as
-              written -- nothing to tick off, and no bullet stripping,
-              since "* = repeat from" defines the "*". */}
-          <ul className="abbreviations-list list-unstyled mb-0" dir="auto">
-            {parseLines(abbreviations).map((item, i) => (
-              <li key={i}>{renderInlineLinks(item)}</li>
+          {/* Reference text, styled like the instructions' notes: one
+              per line as written -- nothing to tick off, and no bullet
+              stripping, since "* = repeat from" defines the "*". */}
+          <div className="abbreviations-list d-flex flex-column gap-2">
+            {parseLines(abbreviations).map((line, i) => (
+              <div key={i} className="checklist-note d-flex gap-2 small" dir="auto">
+                <NoteIcon size={16} className="flex-shrink-0 mt-1" />
+                <span>{renderInlineLinks(line)}</span>
+              </div>
             ))}
-          </ul>
+          </div>
         </CollapsibleCard>
       )}
 

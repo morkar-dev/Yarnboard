@@ -18,6 +18,7 @@ import { Button, Card, Form, InputGroup } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
 import { resolvePhotoUrl } from "../api/client";
 import type { PatternDraft } from "../types/models";
+import StepListEditor from "./StepListEditor";
 
 interface Props {
   draft: PatternDraft;
@@ -39,28 +40,7 @@ export default function PatternReviewForm({ draft, onChange }: Props) {
     updateField("instructions", Object.fromEntries(entries));
   }
 
-  function updateStep(part: string, index: number, text: string) {
-    const steps = [...draft.instructions[part]];
-    steps[index] = text;
-    updateField("instructions", { ...draft.instructions, [part]: steps });
-  }
-
-  /** `prefix` starts the new line as a heading ("## ") or a note ("> ")
-   * -- see utils/patternText for the step conventions. */
-  function addStep(part: string, prefix = "") {
-    updateField("instructions", {
-      ...draft.instructions,
-      [part]: [...draft.instructions[part], prefix],
-    });
-  }
-
-  /** Removes one step from a part. The scraper is only best-effort (see
-   * backend/app/scraper.py) and sometimes splits things in ways that
-   * don't belong -- e.g. a bolded materials-list item getting misread as
-   * its own instruction part -- so reviewers need to be able to drop
-   * individual steps, not just edit their text. */
-  function deleteStep(part: string, index: number) {
-    const steps = draft.instructions[part].filter((_, i) => i !== index);
+  function updateSteps(part: string, steps: string[]) {
     updateField("instructions", { ...draft.instructions, [part]: steps });
   }
 
@@ -136,17 +116,25 @@ export default function PatternReviewForm({ draft, onChange }: Props) {
         />
       </Form.Group>
 
-      <Form.Group controlId="review-materials">
-        <Form.Label>{t("reviewForm.materialsLabel")}</Form.Label>
-        <Form.Control
-          as="textarea"
-          dir="auto"
-          rows={3}
-          value={draft.materials}
-          onChange={(e) => updateField("materials", e.target.value)}
-        />
+      {/* Edited line by line, exactly like an instruction part's steps
+          (see StepListEditor) -- and shown the same way on the pattern
+          page. Stored as one line per item, as before. */}
+      <div role="group" aria-labelledby="review-materials-label">
+        <Form.Label id="review-materials-label">{t("reviewForm.materialsLabel")}</Form.Label>
+        <Card className="shadow-sm">
+          <Card.Body className="d-flex flex-column gap-2">
+            <StepListEditor
+              lines={draft.materials.split("\n")}
+              onChange={(lines) => updateField("materials", lines.join("\n"))}
+              addLabel={t("reviewForm.addMaterial")}
+              inputLabel={(number) => t("reviewForm.materialAria", { number })}
+              deleteLabel={(number) => t("reviewForm.deleteMaterialAria", { number })}
+              keepOneLine
+            />
+          </Card.Body>
+        </Card>
         <Form.Text className="text-muted">{t("reviewForm.materialsHint")}</Form.Text>
-      </Form.Group>
+      </div>
 
       <Form.Group controlId="review-abbreviations">
         <Form.Label>{t("reviewForm.abbreviationsLabel")}</Form.Label>
@@ -198,34 +186,13 @@ export default function PatternReviewForm({ draft, onChange }: Props) {
                 {t("reviewForm.deletePart")}
               </Button>
             </InputGroup>
-            {steps.map((step, index) => (
-              <InputGroup key={index}>
-                <Form.Control
-                  dir="auto"
-                  value={step}
-                  onChange={(e) => updateStep(part, index, e.target.value)}
-                />
-                <Button
-                  variant="outline-secondary"
-                  onClick={() => deleteStep(part, index)}
-                  title={t("reviewForm.deleteStepAria", { number: index + 1, part })}
-                  aria-label={t("reviewForm.deleteStepAria", { number: index + 1, part })}
-                >
-                  &times;
-                </Button>
-              </InputGroup>
-            ))}
-            <div className="d-flex flex-wrap gap-2">
-              <Button variant="outline-primary" size="sm" onClick={() => addStep(part)}>
-                {t("reviewForm.addStep")}
-              </Button>
-              <Button variant="outline-secondary" size="sm" onClick={() => addStep(part, "## ")}>
-                {t("reviewForm.addHeading")}
-              </Button>
-              <Button variant="outline-secondary" size="sm" onClick={() => addStep(part, "> ")}>
-                {t("reviewForm.addNote")}
-              </Button>
-            </div>
+            <StepListEditor
+              lines={steps}
+              onChange={(next) => updateSteps(part, next)}
+              addLabel={t("reviewForm.addStep")}
+              inputLabel={(number) => t("reviewForm.stepAria", { number, part })}
+              deleteLabel={(number) => t("reviewForm.deleteStepAria", { number, part })}
+            />
           </Card.Body>
         </Card>
       ))}
