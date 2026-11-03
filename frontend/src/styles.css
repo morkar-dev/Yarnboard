@@ -136,10 +136,7 @@ textarea {
 }
 
 /* --- Pattern page (PatternDetailPage / PatternChecklist) -------------- */
-.materials-list {
-  padding-inline-start: 1.25rem;
-}
-.materials-list li + li {
+.abbreviations-list li + li {
   margin-top: 0.25rem;
 }
 .checklist-heading {

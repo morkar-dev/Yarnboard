@@ -100,8 +100,9 @@ export function renderInlineLinks(text: string): ReactNode[] {
   return nodes;
 }
 
-/** Materials text -> one list item per non-empty line, bullets stripped. */
-export function parseMaterials(text: string): string[] {
+/** Materials/abbreviations text -> one list item per non-empty line,
+ * bullets and numbering stripped. */
+export function parseListItems(text: string): string[] {
   return text
     .split("\n")
     .map((line) => line.replace(/^\s*(?:[-*•·]|\d+[.)])\s+/, "").trim())

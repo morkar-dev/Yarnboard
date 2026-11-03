@@ -26,12 +26,13 @@ import { fetchPattern, resolvePhotoUrl, translatePattern, translatePatternToEngl
 import AttributionTag from "../components/AttributionTag";
 import CollapsibleCard from "../components/CollapsibleCard";
 import PatternChartGrid from "../components/PatternChartGrid";
+import MaterialsChecklist from "../components/MaterialsChecklist";
 import PatternChecklist from "../components/PatternChecklist";
 import PatternVisibilityPanel from "../components/PatternVisibilityPanel";
 import { useAuth } from "../context/AuthContext";
 import { useApiErrorMessage } from "../i18n/useApiErrorMessage";
 import type { Pattern } from "../types/models";
-import { parseMaterials, renderInlineLinks } from "../utils/patternText";
+import { parseListItems, renderInlineLinks } from "../utils/patternText";
 import { translationForUiLanguage } from "../utils/patternTranslation";
 
 /** Hebrew Unicode block -- used as a lightweight, purely-client-side
@@ -74,7 +75,6 @@ export default function PatternDetailPage() {
   // to the pattern's own primary content -- see the module docstring above.
   const activeTranslation = translationForUiLanguage(pattern, i18n.language);
   const title = activeTranslation?.title ?? pattern.title;
-  const materials = activeTranslation?.materials ?? pattern.materials;
   const abbreviations = activeTranslation?.abbreviations ?? pattern.abbreviations;
   const he = pattern.translations.he;
   const en = pattern.translations.en;
@@ -171,24 +171,28 @@ export default function PatternDetailPage() {
         </Alert>
       )}
 
-      {materials && (
+      {pattern.materials && (
         <CollapsibleCard title={t("patternDetail.materials")}>
-          {/* One item per line; "[name](url)" links (kept by the scraper
-              from the source page, or typed by an editor) become real
-              links -- see utils/patternText. */}
-          <ul className="materials-list mb-0" dir="auto">
-            {parseMaterials(materials).map((item, i) => (
-              <li key={i}>{renderInlineLinks(item)}</li>
-            ))}
-          </ul>
+          {/* Tick-off items, one per line -- see MaterialsChecklist. Ticks
+              are keyed by the primary text; a translation only changes
+              what's shown. */}
+          <MaterialsChecklist
+            patternId={pattern.id}
+            materials={pattern.materials}
+            displayText={activeTranslation?.materials}
+          />
         </CollapsibleCard>
       )}
 
       {abbreviations && (
         <CollapsibleCard title={t("patternDetail.abbreviations")}>
-          <pre className="mb-0" dir="auto" style={{ whiteSpace: "pre-wrap" }}>
-            {abbreviations}
-          </pre>
+          {/* A plain reference list, one abbreviation per line -- nothing
+              to tick off. */}
+          <ul className="abbreviations-list list-unstyled mb-0" dir="auto">
+            {parseListItems(abbreviations).map((item, i) => (
+              <li key={i}>{renderInlineLinks(item)}</li>
+            ))}
+          </ul>
         </CollapsibleCard>
       )}
 

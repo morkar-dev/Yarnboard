@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { parseMaterials, parseRepeat, parseStep, renderInlineLinks, stripStepMarker } from "./patternText";
+import { parseListItems, parseRepeat, parseStep, renderInlineLinks, stripStepMarker } from "./patternText";
 
 describe("parseStep", () => {
   it("reads every heading level from its # count", () => {
@@ -45,7 +45,7 @@ describe("parseRepeat", () => {
 
 describe("materials", () => {
   it("splits lines and strips bullets", () => {
-    expect(parseMaterials("- Yarn\n\n• 4mm needles\n1. Scissors")).toEqual(["Yarn", "4mm needles", "Scissors"]);
+    expect(parseListItems("- Yarn\n\n• 4mm needles\n1. Scissors")).toEqual(["Yarn", "4mm needles", "Scissors"]);
   });
 
   it("renders http(s) markdown links only", () => {
