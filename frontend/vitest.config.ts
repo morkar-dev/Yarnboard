@@ -15,6 +15,6 @@ export default defineConfig({
     // incompatible test runner). Both have their own runner -- see
     // playwright.config.ts/playwright.dev.config.ts and `make e2e`/
     // `npm run test:e2e:dev`.
-    exclude: [...configDefaults.exclude, "e2e/**", "e2e-dev/**"],
+    exclude: [...configDefaults.exclude, "e2e/**", "e2e-dev/**", "e2e-smoke/**"],
   },
 });

@@ -402,3 +402,61 @@ def test_translation_does_not_retry_a_client_error(monkeypatch):
         translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
 
     assert calls["count"] == 1  # no retries for a 4xx
+
+
+class _FakeClock:
+    """Stands in for translation._monotonic; fake_post advances it to
+    simulate how long each Gemini attempt took."""
+
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_gemini_attempts_stay_inside_the_total_time_budget(monkeypatch):
+    """A Gemini that times out every attempt must not keep the request
+    past gunicorn's 90 s worker timeout -- each attempt's timeout is cut
+    to what's left, and no attempt starts too close to the deadline."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(translation, "RETRY_BACKOFF_SECONDS", 0)
+    clock = _FakeClock()
+    monkeypatch.setattr(translation, "_monotonic", clock)
+    start = clock.now
+    timeouts = []
+
+    def fake_post(url, params, json, timeout):
+        timeouts.append(timeout)
+        clock.now += timeout  # the whole timeout passes, then it fails
+        raise translation.requests.exceptions.ReadTimeout("Read timed out.")
+
+    monkeypatch.setattr(translation.requests, "post", fake_post)
+
+    with pytest.raises(translation.TranslationError):
+        translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
+
+    # 60 s, then the 15 s left -- not 4 x 60 s.
+    assert timeouts == [translation.REQUEST_TIMEOUT_SECONDS, translation.TOTAL_BUDGET_SECONDS - translation.REQUEST_TIMEOUT_SECONDS]
+    assert clock.now - start <= translation.TOTAL_BUDGET_SECONDS
+
+
+def test_gemini_does_not_start_an_attempt_with_too_little_time_left(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(translation, "RETRY_BACKOFF_SECONDS", 0)
+    clock = _FakeClock()
+    monkeypatch.setattr(translation, "_monotonic", clock)
+    calls = {"count": 0}
+
+    def fake_post(url, params, json, timeout):
+        calls["count"] += 1
+        # A slow 503: uses up all but a few seconds of the budget.
+        clock.now += translation.TOTAL_BUDGET_SECONDS - translation.MIN_ATTEMPT_SECONDS + 1
+        raise _fake_response_error(503)
+
+    monkeypatch.setattr(translation.requests, "post", fake_post)
+
+    with pytest.raises(translation.TranslationError):
+        translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
+
+    assert calls["count"] == 1

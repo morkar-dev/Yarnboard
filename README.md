@@ -94,8 +94,9 @@ hot-reload -- see Local setup below.
   if `SECRET_KEY` is left at its insecure default; passwords must be at
   least 8 characters; and user-controlled text (username, pattern title)
   is HTML-escaped before being interpolated into outbound emails. See
-  `.github/workflows/security.yml` for the CI job that regression-tests
-  all of this plus dependency vulnerability scanning (`pip-audit`,
+  `backend/tests/test_security.py` (run in CI, see `.gitlab-ci.yml`)
+  for the regression tests of all this, plus the CI's dependency
+  vulnerability scanning (`pip-audit`,
   `npm audit`).
 
 ## Local setup
@@ -192,6 +193,57 @@ in your own shell only, never commit it.
 
 Not run in CI, and deliberately doesn't check real email delivery -- see
 `frontend/e2e-dev/notifications.spec.ts`'s docstring for why.
+
+## GitLab CI
+
+`.gitlab-ci.yml` runs the checks; results show on each merge request, in
+the pipeline's **Tests** tab, and GitLab emails you when a pipeline fails.
+
+| When | What runs |
+| --- | --- |
+| Merge request | backend tests, frontend type check + tests, production build, e2e suite, dependency audits; smoke tests as manual buttons |
+| Push to `dev` | smoke test of the dev site, 10 minutes later (time to deploy) |
+| Push to `main` | all the tests, then a smoke test of the prod site 10 minutes later |
+| Schedule | dependency audits + smoke tests (`SMOKE_TARGET` = `dev`, `prod` or `dev prod`) |
+
+`.github/workflows/` is the older GitHub Actions version of the same
+checks; it only ran on the old GitHub remote.
+
+### Smoke tests against the deployed sites
+
+`frontend/e2e-smoke/` checks a live site end to end, through the
+Cloudflare Worker like a real visitor: `/api/health` settings, opening a
+pattern logged in, pasting text, a real Gemini photo read and a real
+Gemini translation. It waits out Render's free-tier wake-up first. Each
+run creates one private pattern in the test account and deletes it at
+the end.
+
+`/api/health` reports which settings a deployment has, as true/false
+only: `gemini`, `email_onboarding`, `email_notifications`, `proxy_secret`,
+and `proxy_verified` (this request came through the Worker with a
+matching `PROXY_SHARED_SECRET`). The smoke test fails if a required one
+is false -- dev requires `gemini`, `proxy_secret`, `proxy_verified`; prod
+also requires both email keys.
+
+One-time setup:
+
+1. On each site, register a normal (non-admin) account just for this,
+   with its own strong password, and verify its email.
+2. In GitLab: **Settings > CI/CD > Variables**, add (mark the passwords
+   **Masked**; mark them **Protected** only if `dev` and `main` are
+   protected branches, or the smoke jobs won't see them):
+   - `SMOKE_DEV_EMAIL`, `SMOKE_DEV_PASSWORD`
+   - `SMOKE_PROD_URL` (the prod site's address), `SMOKE_PROD_EMAIL`,
+     `SMOKE_PROD_PASSWORD`
+   - optionally `SMOKE_DEV_URL`, if the dev site moves from
+     `https://yarnboard-dev.morkar9696.workers.dev`
+3. In **Build > Pipeline schedules**, add a daily schedule on `dev` with
+   the variable `SMOKE_TARGET` = `dev prod`.
+
+To run it by hand, put `SMOKE_BASE_URL`, `SMOKE_EMAIL` and
+`SMOKE_PASSWORD` in `frontend/e2e-smoke/.env` (git-ignored) and run
+`npm run test:smoke` in `frontend/`; the report is in
+`frontend/smoke-results/html/`.
 
 ## Deploying to Render
 

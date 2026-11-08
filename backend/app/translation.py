@@ -57,6 +57,15 @@ REQUEST_TIMEOUT_SECONDS = 60
 # make the caller wait longer to see the same error.
 MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = 2
+# All attempts plus backoff must finish inside gunicorn's 90 s worker
+# timeout (backend/gunicorn.conf.py), with room left for the rest of the
+# request -- otherwise a slow Gemini gets the worker killed and the user
+# sees a bare proxy 502 instead of our own error message. Each attempt's
+# timeout is cut to what's left, and no attempt starts with less than
+# MIN_ATTEMPT_SECONDS remaining (too short to be worth it).
+TOTAL_BUDGET_SECONDS = 75
+MIN_ATTEMPT_SECONDS = 10
+_monotonic = time.monotonic  # patched in tests
 
 # Schema Gemini must respond in -- one instructions entry per input part,
 # in the same order, so _build_translated_instructions can re-associate
@@ -168,8 +177,10 @@ def _call_gemini(prompt: str, *, extra_parts: list[dict] | None = None, schema: 
         )
 
     url = GEMINI_API_URL_TEMPLATE.format(model=GEMINI_MODEL)
+    deadline = _monotonic() + TOTAL_BUDGET_SECONDS
     response = None
     for attempt in range(MAX_RETRIES + 1):
+        remaining = deadline - _monotonic()
         try:
             response = requests.post(
                 url,
@@ -181,7 +192,7 @@ def _call_gemini(prompt: str, *, extra_parts: list[dict] | None = None, schema: 
                         "responseSchema": schema or _RESPONSE_SCHEMA,
                     },
                 },
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                timeout=min(REQUEST_TIMEOUT_SECONDS, remaining),
             )
             response.raise_for_status()
             break
@@ -190,11 +201,13 @@ def _call_gemini(prompt: str, *, extra_parts: list[dict] | None = None, schema: 
             # etc.) -- fail immediately instead of burning the retry
             # budget on something that can't change.
             is_client_error = exc.response is not None and 400 <= exc.response.status_code < 500
-            if is_client_error or attempt == MAX_RETRIES:
+            backoff = RETRY_BACKOFF_SECONDS * (attempt + 1)
+            out_of_time = deadline - _monotonic() - backoff < MIN_ATTEMPT_SECONDS
+            if is_client_error or attempt == MAX_RETRIES or out_of_time:
                 raise TranslationError(
                     f"Gemini API request failed: {str(exc).replace(api_key, '<redacted>')}"
                 ) from exc
-            time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+            time.sleep(backoff)
 
     try:
         raw_text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
