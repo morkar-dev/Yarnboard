@@ -136,7 +136,10 @@ def test_translate_surfaces_translation_error_as_502(client, monkeypatch):
 
     resp = client.post(f"/api/patterns/{pattern['id']}/translate")
     assert resp.status_code == 502
-    assert "GEMINI_API_KEY" in resp.get_json()["error"]
+    body = resp.get_json()
+    assert body["code"] == "translation_error"
+    # Upstream error text stays in the server log, never in the response.
+    assert "GEMINI_API_KEY" not in body["error"]
 
 
 def test_edit_with_matching_instructions_he_marks_reviewed(client):

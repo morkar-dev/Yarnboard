@@ -22,8 +22,14 @@ describe("useApiErrorMessage", () => {
   });
 
   it("keeps the server's own message for a coded error with no translation", () => {
+    expect(getMessage(new ApiError(400, "Not a chart link", "invalid_share_url"))).toBe(
+      "Not a chart link",
+    );
+  });
+
+  it("shows a fixed message for translation_error, not the server text", () => {
     expect(getMessage(new ApiError(502, "Gemini quota exceeded", "translation_error"))).toBe(
-      "Gemini quota exceeded",
+      "We couldn't translate this pattern right now. Please try again in a moment.",
     );
   });
 

@@ -370,6 +370,7 @@
     "too_many_photos": "Up to {{max_photos}} photos at a time.",
     "invalid_photo": "One of those files isn't a photo we can read.",
     "photo_read_error": "We couldn't read those photos right now. Please try again in a moment.",
+    "translation_error": "We couldn't translate this pattern right now. Please try again in a moment.",
     "photo_no_text": "We couldn't find pattern text in those photos. Try clearer, closer photos."
   }
 }
