@@ -1075,7 +1075,13 @@ def translate_pattern(pattern_id):
             )
         )
     except translation.TranslationError as exc:
-        return jsonify({"error": str(exc), "code": "translation_error"}), 502
+        # Details go to the server log, not the client: the message can
+        # carry upstream (Gemini) error text.
+        current_app.logger.error("Translating pattern %s failed: %s", pattern.id, exc)
+        return jsonify({
+            "error": "We couldn't translate this pattern right now. Please try again in a moment.",
+            "code": "translation_error",
+        }), 502
 
     pattern.title_he = title_he
     pattern.materials_he = materials_he
@@ -1141,7 +1147,13 @@ def translate_pattern_to_english(pattern_id):
             )
         )
     except translation.TranslationError as exc:
-        return jsonify({"error": str(exc), "code": "translation_error"}), 502
+        # Details go to the server log, not the client: the message can
+        # carry upstream (Gemini) error text.
+        current_app.logger.error("Translating pattern %s failed: %s", pattern.id, exc)
+        return jsonify({
+            "error": "We couldn't translate this pattern right now. Please try again in a moment.",
+            "code": "translation_error",
+        }), 502
 
     pattern.title_en = title_en
     pattern.materials_en = materials_en

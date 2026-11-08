@@ -5,7 +5,7 @@ import { ApiError } from "../api/client";
  * Resolves an error caught from an API call to a localized, user-facing
  * message. ApiError.code maps to an errors.<code> key in en.json/he.json
  * when one exists; a handful of codes deliberately have no matching key
- * (scraper_error, translation_error, stitchfiddle_fetch_error,
+ * (scraper_error, stitchfiddle_fetch_error,
  * invalid_share_url, invalid_translation -- see each one's comment in
  * the backend route that sends it) because that text is generated
  * per-request server-side, not a fixed string a resource file could

@@ -102,3 +102,39 @@ def test_materials_text_uses_description_when_present():
     assert "Forest Green (#849C62)" in text
     assert "FG2 (#578151)" in text
     assert "Color 3 (#D0B9A9)" in text
+
+
+def test_fetch_chart_hides_raw_browser_error(monkeypatch):
+    """An unexpected browser failure is logged, not put in the message the
+    user sees (that text can carry internal details)."""
+    from app import stitchfiddle
+
+    class _Page:
+        def expect_response(self, *args, **kwargs):
+            raise RuntimeError("net::ERR_PROXY at internal-host:9222")
+
+    class _Browser:
+        def new_page(self, **kwargs):
+            return _Page()
+
+        def close(self):
+            pass
+
+    class _Playwright:
+        class chromium:
+            @staticmethod
+            def launch():
+                return _Browser()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(stitchfiddle, "sync_playwright", lambda: _Playwright())
+
+    with pytest.raises(stitchfiddle.StitchFiddleError) as info:
+        stitchfiddle.fetch_chart("https://www.stitchfiddle.com/c/abc123")
+    assert str(info.value) == "Could not load this chart from Stitch Fiddle."
+    assert "internal-host" not in str(info.value)
