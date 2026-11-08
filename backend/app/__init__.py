@@ -14,10 +14,11 @@ split buys us: each blueprint is a self-contained module you can read
 top-to-bottom for one concern, without wading through the other.
 """
 
+import os
 from pathlib import Path
-from flasgger import Swagger
 
 import click
+from flasgger import Swagger
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 
@@ -531,7 +532,23 @@ def create_app(config_overrides: dict | None = None):
 
     @app.route("/api/health")
     def health():
-        return {"status": "ok"}
+        """Liveness plus which optional settings are present, so a smoke
+        test can catch a missing key on a deployed service. Only
+        true/false -- never a value. `proxy_verified` is about this
+        request: true only when it came through the Worker with a
+        PROXY_SHARED_SECRET matching this service's."""
+        from .extensions import proxy_secret_matches
+
+        return {
+            "status": "ok",
+            "config": {
+                "gemini": bool(os.environ.get("GEMINI_API_KEY")),
+                "email_onboarding": bool(os.environ.get("RESEND_ONBOARDING")),
+                "email_notifications": bool(os.environ.get("RESEND_NOTIFICATIONS")),
+                "proxy_secret": bool(app.config.get("PROXY_SHARED_SECRET")),
+                "proxy_verified": proxy_secret_matches(),
+            },
+        }
 
     @app.errorhandler(413)
     def request_too_large(_error):

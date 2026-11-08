@@ -219,3 +219,11 @@ package-lock.json
 package.json
 # wrangler dev local state
 .wrangler/
+
+# Smoke tests against a deployed site (frontend/e2e-smoke/, see
+# .gitlab-ci.yml) -- the session cookie of the smoke account, per-run
+# state, a local .env with its login, and run reports.
+frontend/e2e-smoke/.auth/
+frontend/e2e-smoke/.state.json
+frontend/e2e-smoke/.env
+frontend/smoke-results/

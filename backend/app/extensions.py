@@ -19,6 +19,22 @@ from flask_limiter import Limiter
 db = SQLAlchemy()
 bcrypt = Bcrypt()
 
+
+def proxy_secret_matches() -> bool:
+    """True when this request carries the right X-Yarnboard-Proxy-Secret,
+    i.e. it came through the Cloudflare Worker and the Worker's
+    PROXY_SHARED_SECRET matches this service's. False when either side
+    has no secret set."""
+    secret = current_app.config.get("PROXY_SHARED_SECRET", "")
+    sent_secret = request.headers.get("X-Yarnboard-Proxy-Secret", "")
+    # Compared as bytes: compare_digest raises TypeError on non-ASCII str,
+    # and Werkzeug hands headers over latin-1-decoded -- a junk header would
+    # otherwise turn /api/login into a 500.
+    return bool(secret) and hmac.compare_digest(
+        sent_secret.encode("utf-8"), secret.encode("utf-8")
+    )
+
+
 # In-memory storage (the default) is fine for this app's single-service,
 # low-traffic deployment -- it resets on restart and isn't shared across
 # worker processes, which is an acceptable tradeoff here since the goal is
@@ -41,13 +57,8 @@ def client_ip() -> str:
        forgeable, the last one isn't.
     3. Neither (local dev, tests): remote_addr.
     """
-    secret = current_app.config.get("PROXY_SHARED_SECRET", "")
     forwarded_ip = request.headers.get("X-Yarnboard-Client-IP", "").strip()
-    sent_secret = request.headers.get("X-Yarnboard-Proxy-Secret", "")
-    # Compared as bytes: compare_digest raises TypeError on non-ASCII str,
-    # and Werkzeug hands headers over latin-1-decoded -- a junk header would
-    # otherwise turn /api/login into a 500.
-    if secret and forwarded_ip and hmac.compare_digest(sent_secret.encode("utf-8"), secret.encode("utf-8")):
+    if forwarded_ip and proxy_secret_matches():
         return forwarded_ip
 
     forwarded_for = request.headers.get("X-Forwarded-For", "")

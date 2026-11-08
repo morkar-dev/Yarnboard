@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:dev": "playwright test --config=playwright.dev.config.ts"
+    "test:e2e:dev": "playwright test --config=playwright.dev.config.ts",
+    "test:smoke": "playwright test --config=playwright.smoke.config.ts"
   },
   "dependencies": {
     "bootstrap": "^5.3.8",
