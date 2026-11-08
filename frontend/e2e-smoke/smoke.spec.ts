@@ -4,11 +4,10 @@ import { PHOTO_FILE, REQUIRED_FLAGS, SMOKE_PATTERN_TITLE, STATE_FILE } from "./f
 
 const { patternId } = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8")) as { patternId: number };
 
-// Long enough for the backend's own Gemini retries (60 s per attempt, up
-// to 4 attempts) to finish, so a failure shows the API's error body
-// rather than a client-side timeout. On Render, gunicorn's 90 s worker
-// timeout ends it sooner.
-const GEMINI_TIMEOUT_MS = 270_000;
+// Longer than the backend's 75 s Gemini budget (translation.py's
+// TOTAL_BUDGET_SECONDS), so a failure shows the API's own error body
+// rather than a client-side timeout.
+const GEMINI_TIMEOUT_MS = 120_000;
 
 test("health: required settings are present on this deployment", async ({ request }) => {
   const response = await request.get("/api/health");
