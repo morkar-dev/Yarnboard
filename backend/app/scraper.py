@@ -18,6 +18,7 @@ import ipaddress
 import re
 import socket
 import time
+import zlib
 from urllib.parse import unquote, urljoin, urlparse
 
 import pdfplumber
@@ -304,12 +305,30 @@ PDF_PLACEHOLDER_AUTHORS = {
 # original document -- and in practice almost always is ("Microsoft Word",
 # "Canva", "Adobe InDesign 18.0"). Only a value that matches none of these
 # is treated as a person's name.
+#
+# Matched on word boundaries so a surname that merely contains a hint
+# isn't dropped (Rios/Antonios vs "ios", Scanlon vs "scan", Printz vs
+# "print", Wordsworth vs "word", Chromy vs "chrome"):
+#   - brand names need only a boundary in front, because real Creator
+#     strings glue them to more text ("Microsoft365", "pdfTeX-1.40.25",
+#     "PDFium") and no one's name starts with them;
+#   - short or everyday words must match as whole words.
+_PDF_SOFTWARE_BRANDS = (
+    "microsoft", "adobe", "acrobat", "indesign", "illustrator", "photoshop",
+    "powerpoint", "libreoffice", "openoffice", "pdf", "latex", "pdftex",
+    "ghostscript", "mozilla", "firefox", "chromium", "inkscape", "scribus",
+    "canva", "figma", "google", "scansnap", "wkhtmltopdf",
+)
+_PDF_SOFTWARE_WORDS = (
+    "word", "office", "excel", "docs", "pages", "keynote", "writer", "quartz",
+    "tex", "skia", "safari", "chrome", "print", "printer", "printed", "scan",
+    "scanner", "scanned", "ios", "ipados", "macos", "mac os", "os x", "windows",
+    "android", "wps", "affinity", "distiller", "version", "build",
+)
 PDF_SOFTWARE_HINTS = re.compile(
-    r"word|office|excel|powerpoint|acrobat|adobe|indesign|illustrator|photoshop|"
-    r"canva|google|docs|pages|keynote|libreoffice|openoffice|writer|quartz|"
-    r"pdf|latex|tex\b|chrom|skia|safari|firefox|mozilla|print|scan|microsoft|"
-    r"mac ?os|windows|ios|android|wps|affinity|figma|inkscape|scribus|"
-    r"version|\bv?\d+(\.\d+)+",
+    r"\b(?:" + "|".join(_PDF_SOFTWARE_BRANDS) + r")"
+    + r"|\b(?:" + "|".join(w.replace(" ", r"\s?") for w in _PDF_SOFTWARE_WORDS) + r")\b"
+    + r"|\bv?\d+(?:\.\d+)+",  # a version number: "18.2", "v1.40.25"
     re.IGNORECASE,
 )
 
@@ -356,19 +375,37 @@ def _clean_pdf_name(value) -> str | None:
     return name
 
 
+# XMP packets are a few KB (Adobe pads them to ~2-4 KB; one with an
+# embedded thumbnail can reach tens of KB). Anything bigger isn't worth
+# reading for an author name -- and capping it, before decompressing or
+# parsing, keeps a crafted upload from tying up the request worker.
+XMP_MAX_BYTES = 256 * 1024
+
+
 def _pdf_xmp_creators(pdf) -> list[str]:
     """The dc:creator entries of a PDF's XMP metadata, in order. Empty if
-    it has none or they can't be read -- a malformed metadata stream must
-    never fail the whole upload."""
-    try:
-        from xml.etree import ElementTree
+    it has none, or if it can't be read safely -- a malformed or hostile
+    metadata stream must never fail (or stall) the whole upload.
 
-        from pdfminer.pdftypes import resolve1
+    The PDF is user-uploaded, so the stream is treated as hostile:
+      - its size is capped before anything is decoded, and it's
+        decompressed here with a hard output limit (pdfminer's get_data()
+        would inflate a compression bomb in full first);
+      - the XML is parsed with defusedxml with DTDs forbidden, so no
+        entity definition (billion laughs, external entities) is ever
+        expanded.
+    """
+    try:
+        from defusedxml import ElementTree
+        from pdfminer.pdftypes import PDFStream, resolve1
 
         stream = resolve1(pdf.doc.catalog.get("Metadata"))
-        if stream is None:
+        if not isinstance(stream, PDFStream):
             return []
-        root = ElementTree.fromstring(stream.get_data())
+        data = _bounded_stream_bytes(stream, XMP_MAX_BYTES)
+        if data is None:
+            return []
+        root = ElementTree.fromstring(data, forbid_dtd=True)
         ns = {
             "dc": "http://purl.org/dc/elements/1.1/",
             "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
@@ -381,6 +418,28 @@ def _pdf_xmp_creators(pdf) -> list[str]:
         ]
     except Exception:
         return []
+
+
+def _bounded_stream_bytes(stream, max_bytes: int) -> bytes | None:
+    """A PDF stream's decoded bytes, or None if it would exceed `max_bytes`
+    (compressed or decompressed) or uses an encoding other than none or
+    plain Flate (zlib) -- the only two an XMP packet uses in practice."""
+    raw = stream.get_rawdata()
+    if raw is None or len(raw) > max_bytes:
+        return None
+    filters = stream.get_filters()
+    if not filters:
+        return raw
+    if len(filters) != 1:
+        return None
+    name, params = filters[0]
+    if getattr(name, "name", name) not in ("FlateDecode", "Fl") or params:
+        return None  # params would mean a PNG/TIFF predictor: not XMP
+    inflater = zlib.decompressobj()
+    data = inflater.decompress(raw, max_bytes + 1)
+    if len(data) > max_bytes or inflater.unconsumed_tail:
+        return None
+    return data
 
 
 MANUAL_SOURCE_PREFIX = "manual:"
