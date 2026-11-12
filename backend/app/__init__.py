@@ -530,6 +530,25 @@ def create_app(config_overrides: dict | None = None):
             if user and user.email_verify_token:
                 print(user.email_verify_token)
 
+    @app.cli.command("e2e-expire-verify-token")
+    @click.argument("email")
+    def e2e_expire_verify_token(email):
+        """`flask --app wsgi e2e-expire-verify-token <email>` -- backdate
+        that user's pending verification token past its 24-hour lifetime,
+        so the Playwright e2e suite can check the "link expired" path
+        without waiting a day. Test-only, like e2e-verify-token: run it
+        against the throwaway e2e database. No-op if the user doesn't exist
+        or has no pending token."""
+        from datetime import datetime, timedelta, timezone
+
+        from .models import User
+
+        with app.app_context():
+            user = User.query.filter_by(email=email.strip().lower()).first()
+            if user and user.email_verify_token:
+                user.email_verify_token_created_at = datetime.now(timezone.utc) - timedelta(hours=25)
+                db.session.commit()
+
     @app.route("/api/health")
     def health():
         """Liveness plus which optional settings are present, so a smoke
