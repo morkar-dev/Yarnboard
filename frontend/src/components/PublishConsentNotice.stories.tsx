@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn } from "storybook/test";
+import { t } from "../mocks/text";
 import PublishConsentNotice from "./PublishConsentNotice";
 
 const meta = {
@@ -12,7 +13,7 @@ type Story = StoryObj<typeof meta>;
 
 export const NotAcknowledged: Story = {
   play: async ({ canvas, userEvent, args }) => {
-    await userEvent.click(canvas.getByLabelText("I understand this pattern will be published publicly."));
+    await userEvent.click(canvas.getByLabelText(t("publishConsent.checkboxLabel")));
     await expect(args.onAcknowledgeChange).toHaveBeenCalledWith(true);
   },
 };

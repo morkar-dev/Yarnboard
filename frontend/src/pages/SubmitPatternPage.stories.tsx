@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes, useLocation } from "react-router-dom";
 import { expect } from "storybook/test";
+import { t } from "../mocks/text";
 import { linkPreviewBlocked, linkPreviewDuplicate, loggedIn, loggedOut } from "../mocks/handlers";
 import SubmitPatternPage from "./SubmitPatternPage";
 
@@ -30,8 +31,8 @@ type Story = StoryObj<typeof meta>;
 
 export const FromALink: Story = {
   play: async ({ canvas, userEvent }) => {
-    await userEvent.type(await canvas.findByLabelText("Pattern URL"), "https://example.com/cozy-raglan");
-    await userEvent.click(canvas.getByRole("button", { name: "Preview" }));
+    await userEvent.type(await canvas.findByLabelText(t("submit.urlLabel")), "https://example.com/cozy-raglan");
+    await userEvent.click(canvas.getByRole("button", { name: t("submit.previewButton") }));
     await expect(await canvas.findByTestId("landed")).toHaveTextContent("/submit/review");
   },
 };
@@ -39,37 +40,37 @@ export const FromALink: Story = {
 export const LinkBlockedBySite: Story = {
   parameters: { msw: { handlers: { linkPreview: linkPreviewBlocked } } },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.type(await canvas.findByLabelText("Pattern URL"), "https://example.com/blocked");
-    await userEvent.click(canvas.getByRole("button", { name: "Preview" }));
-    await expect(await canvas.findByText("That link didn't work")).toBeVisible();
+    await userEvent.type(await canvas.findByLabelText(t("submit.urlLabel")), "https://example.com/blocked");
+    await userEvent.click(canvas.getByRole("button", { name: t("submit.previewButton") }));
+    await expect(await canvas.findByText(t("submit.fetchFailedTitle"))).toBeVisible();
   },
 };
 
 export const DuplicateLink: Story = {
   parameters: { msw: { handlers: { linkPreview: linkPreviewDuplicate } } },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.type(await canvas.findByLabelText("Pattern URL"), "https://example.com/already-here");
-    await userEvent.click(canvas.getByRole("button", { name: "Preview" }));
+    await userEvent.type(await canvas.findByLabelText(t("submit.urlLabel")), "https://example.com/already-here");
+    await userEvent.click(canvas.getByRole("button", { name: t("submit.previewButton") }));
     await expect(await canvas.findByTestId("landed")).toHaveTextContent("/pattern/43");
   },
 };
 
 export const SwitchModes: Story = {
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByRole("button", { name: /Paste text/ }));
-    await expect(canvas.getByLabelText("Pattern text")).toBeInTheDocument();
-    await userEvent.click(canvas.getByRole("button", { name: /Photos/ }));
-    await expect(canvas.getByLabelText("Photos of the pattern")).toBeInTheDocument();
-    await userEvent.click(canvas.getByRole("button", { name: /Upload a file/ }));
-    await expect(canvas.getByLabelText("Saved HTML or PDF file")).toBeInTheDocument();
+    await userEvent.click(await canvas.findByRole("button", { name: t("submit.modeText") }));
+    await expect(canvas.getByLabelText(t("submit.textLabel"))).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: t("submit.modePhotos") }));
+    await expect(canvas.getByLabelText(t("submit.photosLabel"))).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: t("submit.modeUpload") }));
+    await expect(canvas.getByLabelText(t("submit.uploadFileLabel"))).toBeInTheDocument();
   },
 };
 
 export const Guest: Story = {
   parameters: { msw: { handlers: { auth: loggedOut } } },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByRole("link", { name: "Log in" })).toBeInTheDocument();
-    await expect(canvas.queryByLabelText("Pattern URL")).not.toBeInTheDocument();
+    await expect(await canvas.findByRole("link", { name: t("submit.guestPromptLogin") })).toBeInTheDocument();
+    await expect(canvas.queryByLabelText(t("submit.urlLabel"))).not.toBeInTheDocument();
   },
 };
 

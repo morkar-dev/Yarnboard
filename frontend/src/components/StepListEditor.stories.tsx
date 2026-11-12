@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState, type ComponentProps } from "react";
 import { expect, fn } from "storybook/test";
+import { t } from "../mocks/text";
 import StepListEditor from "./StepListEditor";
 
 /** StepListEditor is controlled -- this wrapper holds the lines so the
@@ -59,10 +60,10 @@ export const EditAddAndDelete: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Delete step 1" }));
     await expect(canvas.getByLabelText("Step 1")).toHaveValue("Purl one round.");
 
-    await userEvent.click(canvas.getByRole("button", { name: "+ Add heading" }));
+    await userEvent.click(canvas.getByRole("button", { name: t("reviewForm.addHeading") }));
     await expect(canvas.getByLabelText("Step 2")).toHaveValue("## ");
 
-    await userEvent.click(canvas.getByRole("button", { name: "+ Add note" }));
+    await userEvent.click(canvas.getByRole("button", { name: t("reviewForm.addNote") }));
     await expect(args.onChange).toHaveBeenLastCalledWith(["Purl one round.", "## ", "> "]);
   },
 };

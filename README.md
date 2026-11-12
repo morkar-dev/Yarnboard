@@ -208,7 +208,10 @@ npm --prefix frontend run test:stories     # interaction tests + axe a11y scan
 
 `test:stories` renders every story in headless Chromium, runs its `play`
 function (clicks, typing, assertions), then fails on any accessibility
-violation. If a rule genuinely can't be fixed yet, switch it off on that
+violation. Play functions find buttons and labels by their translated text
+(`t("submit.modeText")` from `frontend/src/mocks/text.ts`), never by
+hard-coded English, because the visual tests run every story in Hebrew too
+and fail if a play function throws there. If a rule genuinely can't be fixed yet, switch it off on that
 one story with a comment rather than globally.
 
 Visual regression compares a screenshot of every story, in English and

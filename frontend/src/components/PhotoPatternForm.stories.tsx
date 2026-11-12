@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, waitFor } from "storybook/test";
+import { t } from "../mocks/text";
 import { previewFails } from "../mocks/handlers";
 import PhotoPatternForm from "./PhotoPatternForm";
 
@@ -25,21 +26,21 @@ type Story = StoryObj<typeof meta>;
 
 export const Empty: Story = {
   play: async ({ canvas }) => {
-    await expect(canvas.getByRole("button", { name: "Read photos" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: t("submit.photosButton") })).toBeDisabled();
   },
 };
 
 export const AddRemoveAndSubmit: Story = {
   play: async ({ canvas, userEvent, args }) => {
-    const input = canvas.getByLabelText("Photos of the pattern");
+    const input = canvas.getByLabelText(t("submit.photosLabel"));
     await userEvent.upload(input, [await photo("page1.png", "#6b3f73"), await photo("page2.png", "#9b6fa3")]);
-    await expect(canvas.getByAltText("Photo 1")).toBeInTheDocument();
-    await expect(canvas.getByAltText("Photo 2")).toBeInTheDocument();
+    await expect(canvas.getByAltText(t("submit.photoAlt", { number: 1 }))).toBeInTheDocument();
+    await expect(canvas.getByAltText(t("submit.photoAlt", { number: 2 }))).toBeInTheDocument();
 
-    await userEvent.click(canvas.getByRole("button", { name: "Remove photo 2" }));
-    await expect(canvas.queryByAltText("Photo 2")).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: t("submit.removePhoto", { number: 2 }) }));
+    await expect(canvas.queryByAltText(t("submit.photoAlt", { number: 2 }))).not.toBeInTheDocument();
 
-    await userEvent.click(canvas.getByRole("button", { name: "Read photos" }));
+    await userEvent.click(canvas.getByRole("button", { name: t("submit.photosButton") }));
     await waitFor(() => expect(args.onResult).toHaveBeenCalledTimes(1));
   },
 };
@@ -47,17 +48,17 @@ export const AddRemoveAndSubmit: Story = {
 export const TooManyPhotos: Story = {
   play: async ({ canvas, userEvent }) => {
     const files = await Promise.all(["#111", "#333", "#555", "#777", "#999", "#bbb"].map((c, i) => photo(`p${i}.png`, c)));
-    await userEvent.upload(canvas.getByLabelText("Photos of the pattern"), files);
-    await expect(canvas.getByText("Only the first 5 photos were kept.")).toBeVisible();
-    await expect(canvas.getByLabelText("Photos of the pattern")).toBeDisabled();
+    await userEvent.upload(canvas.getByLabelText(t("submit.photosLabel")), files);
+    await expect(canvas.getByText(t("submit.photosTooMany", { max: 5 }))).toBeVisible();
+    await expect(canvas.getByLabelText(t("submit.photosLabel"))).toBeDisabled();
   },
 };
 
 export const ServerCantReadThem: Story = {
   parameters: { msw: { handlers: { preview: previewFails } } },
   play: async ({ canvas, userEvent, args }) => {
-    await userEvent.upload(canvas.getByLabelText("Photos of the pattern"), await photo("blurry.png", "#ccc"));
-    await userEvent.click(canvas.getByRole("button", { name: "Read photos" }));
+    await userEvent.upload(canvas.getByLabelText(t("submit.photosLabel")), await photo("blurry.png", "#ccc"));
+    await userEvent.click(canvas.getByRole("button", { name: t("submit.photosButton") }));
     await expect(await canvas.findByRole("alert")).toBeVisible();
     await expect(args.onResult).not.toHaveBeenCalled();
   },

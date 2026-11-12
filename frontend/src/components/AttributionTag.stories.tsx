@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect } from "storybook/test";
+import { t } from "../mocks/text";
 import * as fixtures from "../mocks/fixtures";
 import AttributionTag from "./AttributionTag";
 
@@ -22,8 +23,8 @@ export const WithSourceLink: Story = {
 export const UnknownAuthorAndSite: Story = {
   args: { pattern: { ...fixtures.pattern, author: null, source_site_name: null, source_domain: null } },
   play: async ({ canvas }) => {
-    await expect(canvas.getByText("Unknown")).toBeInTheDocument();
-    await expect(canvas.getByRole("link", { name: "the original site" })).toBeInTheDocument();
+    await expect(canvas.getByText(t("attribution.unknownAuthor"))).toBeInTheDocument();
+    await expect(canvas.getByRole("link", { name: t("attribution.originalSiteFallback") })).toBeInTheDocument();
   },
 };
 

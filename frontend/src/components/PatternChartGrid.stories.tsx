@@ -47,5 +47,5 @@ export const WiderThanScreen: Story = {
   args: {
     grid: { column_count: 200, row_count: 30, palette: [{ hex: "#9b6fa3", label: "Lilac" }], cells: Array(6000).fill(0) },
   },
-  parameters: { viewport: { defaultViewport: "mobile" } },
+  globals: { viewport: { value: "mobile", isRotated: false } },
 };

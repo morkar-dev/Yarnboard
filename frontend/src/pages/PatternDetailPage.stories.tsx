@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes } from "react-router-dom";
 import { expect, waitFor } from "storybook/test";
+import { t } from "../mocks/text";
 import * as fixtures from "../mocks/fixtures";
 import {
   loggedIn,
@@ -37,8 +38,8 @@ type Story = StoryObj<typeof meta>;
 export const Owner: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByRole("heading", { name: "Cozy Raglan Sweater" })).toBeInTheDocument();
-    await expect(canvas.getByRole("link", { name: "Edit" })).toHaveAttribute("href", "/pattern/42/edit");
-    await expect(canvas.getByRole("button", { name: "Publish to Community" })).toBeInTheDocument();
+    await expect(canvas.getByRole("link", { name: t("patternDetail.edit") })).toHaveAttribute("href", "/pattern/42/edit");
+    await expect(canvas.getByRole("button", { name: t("visibility.publishButton") })).toBeInTheDocument();
   },
 };
 
@@ -46,8 +47,8 @@ export const SharedViewOnly: Story = {
   parameters: { msw: { handlers: { pattern: patternIs(fixtures.sharedViewOnlyPattern) } } },
   play: async ({ canvas }) => {
     await canvas.findByRole("heading", { name: "Cozy Raglan Sweater" });
-    await expect(canvas.queryByRole("link", { name: "Edit" })).not.toBeInTheDocument();
-    await expect(canvas.queryByRole("button", { name: "Publish to Community" })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole("link", { name: t("patternDetail.edit") })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole("button", { name: t("visibility.publishButton") })).not.toBeInTheDocument();
   },
 };
 
@@ -57,18 +58,18 @@ export const GuestViewingPublicPattern: Story = {
   },
   play: async ({ canvas }) => {
     await canvas.findByRole("heading", { name: "Simple Garter Scarf" });
-    await expect(canvas.queryByRole("button", { name: "Translate to Hebrew" })).not.toBeInTheDocument();
-    await expect(await canvas.findByText(/checking items off as a guest/)).toBeInTheDocument();
+    await expect(canvas.queryByRole("button", { name: t("patternDetail.translateButton") })).not.toBeInTheDocument();
+    await expect(await canvas.findByText(t("checklist.guestNotice"))).toBeInTheDocument();
   },
 };
 
 export const TranslateToHebrew: Story = {
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByRole("button", { name: "Translate to Hebrew" }));
+    await userEvent.click(await canvas.findByRole("button", { name: t("patternDetail.translateButton") }));
     // English UI keeps the English content; the button goes away once a
     // Hebrew translation exists.
     await waitFor(() =>
-      expect(canvas.queryByRole("button", { name: "Translate to Hebrew" })).not.toBeInTheDocument(),
+      expect(canvas.queryByRole("button", { name: t("patternDetail.translateButton") })).not.toBeInTheDocument(),
     );
   },
 };
@@ -76,7 +77,7 @@ export const TranslateToHebrew: Story = {
 export const TranslationFails: Story = {
   parameters: { msw: { handlers: { translate: translateFails } } },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByRole("button", { name: "Translate to Hebrew" }));
+    await userEvent.click(await canvas.findByRole("button", { name: t("patternDetail.translateButton") }));
     await expect(await canvas.findByRole("alert")).toBeVisible();
   },
 };
@@ -96,7 +97,7 @@ export const HebrewUiWithUnreviewedTranslation: Story = {
     // since the checklist's guest notice is an alert too while the fake
     // session check is still loading.
     const alerts = await canvas.findAllByRole("alert");
-    await expect(alerts.find((a) => a.textContent?.includes("תורגם אוטומטית"))).toBeVisible();
+    await expect(alerts.find((a) => a.textContent?.includes(t("patternDetail.unreviewedNotice")))).toBeVisible();
   },
 };
 
@@ -123,7 +124,7 @@ export const Loading: Story = { parameters: { msw: { handlers: { pattern: patter
 export const NotFound: Story = {
   parameters: { msw: { handlers: { pattern: patternNotFound } } },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByText("Pattern not found.")).toBeInTheDocument();
+    await expect(await canvas.findByText(t("patternDetail.notFound"))).toBeInTheDocument();
   },
 };
 

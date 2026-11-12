@@ -36,23 +36,81 @@ const LOCALES = ["en", "he"] as const;
  * stylePath), so a baseline written below matches later comparisons. */
 const SCREENSHOT_CSS = readFileSync(path.join(here, "screenshot.css"), "utf8");
 
+/** Mirrors .storybook/preview.tsx's viewport options. */
+const VIEWPORTS: Record<string, { width: number; height: number }> = {
+  mobile: { width: 375, height: 812 },
+  tablet: { width: 768, height: 1024 },
+};
+
+/** Wait until Storybook has rendered the story and finished its play
+ * function; returns the final phase ("errored"/"aborted" on failure). */
+async function waitForStory(page: import("@playwright/test").Page): Promise<string> {
+  const phase = await page.waitForFunction(
+    () => {
+      const p = (window as unknown as { __STORYBOOK_PREVIEW__?: { currentRender?: { phase?: string } } })
+        .__STORYBOOK_PREVIEW__?.currentRender?.phase;
+      return p === "completed" || p === "finished" || p === "errored" || p === "aborted" ? p : false;
+    },
+    undefined,
+    { timeout: 20_000 },
+  );
+  return (await phase.jsonValue()) as string;
+}
+
+/**
+ * Storybook marks a story "finished" even when its play function threw --
+ * the error only reaches its own event channel (and the console). Listen on
+ * that channel from the moment Storybook creates it, before any story code
+ * runs, so a failed play fails the test instead of being screenshotted
+ * half-done (e.g. a Hebrew run of steps that look for English labels).
+ */
+function collectStoryErrors() {
+  const errors: string[] = [];
+  (window as unknown as { __ybStoryErrors: string[] }).__ybStoryErrors = errors;
+  let channel: { on: (event: string, listener: (payload: unknown) => void) => void } | undefined;
+  Object.defineProperty(window, "__STORYBOOK_ADDONS_CHANNEL__", {
+    configurable: true,
+    get: () => channel,
+    set(value) {
+      channel = value;
+      for (const event of ["playFunctionThrewException", "storyThrewException", "storyErrored", "unhandledErrorsWhilePlaying"]) {
+        value.on(event, (payload: unknown) => {
+          const detail = payload as { message?: string; description?: string } | undefined;
+          errors.push(`${event}: ${detail?.message ?? detail?.description ?? String(payload)}`);
+        });
+      }
+    },
+  });
+}
+
 for (const story of stories) {
   for (const locale of LOCALES) {
     test(`${story.title} / ${story.name} [${locale}]`, async ({ page }) => {
-      await page.goto(`/iframe.html?id=${story.id}&viewMode=story&globals=locale:${locale}`);
+      await page.addInitScript(collectStoryErrors);
+      const url = `/iframe.html?id=${story.id}&viewMode=story&globals=locale:${locale}`;
+      await page.goto(url);
+      await expect(await waitForStory(page)).toMatch(/^(completed|finished)$/);
 
-      // Wait until Storybook has rendered the story and finished its play
-      // function; fail on a render or play error rather than snapshotting it.
-      const phase = await page.waitForFunction(
-        () => {
-          const p = (window as unknown as { __STORYBOOK_PREVIEW__?: { currentRender?: { phase?: string } } })
-            .__STORYBOOK_PREVIEW__?.currentRender?.phase;
-          return p === "completed" || p === "finished" || p === "errored" || p === "aborted" ? p : false;
-        },
-        undefined,
-        { timeout: 20_000 },
-      );
-      expect(["completed", "finished"]).toContain(await phase.jsonValue());
+      // Storybook's own UI sizes the frame for a story's viewport global
+      // (e.g. "Mobile" stories); this bare page doesn't, so do it here and
+      // reload, letting the play function run again at the right size.
+      const viewport = await page.evaluate(() => {
+        type Globals = { viewport?: { value?: string } };
+        const story = (window as unknown as {
+          __STORYBOOK_PREVIEW__?: { currentRender?: { story?: { storyGlobals?: Globals; globals?: Globals } } };
+        }).__STORYBOOK_PREVIEW__?.currentRender?.story;
+        return story?.storyGlobals?.viewport?.value ?? story?.globals?.viewport?.value;
+      });
+      if (viewport && viewport !== "desktop") {
+        const size = VIEWPORTS[viewport];
+        expect(size, `unknown viewport "${viewport}" -- add it to VIEWPORTS`).toBeDefined();
+        await page.setViewportSize(size);
+        await page.goto(url);
+        await expect(await waitForStory(page)).toMatch(/^(completed|finished)$/);
+      }
+
+      const storyErrors = await page.evaluate(() => (window as unknown as { __ybStoryErrors: string[] }).__ybStoryErrors);
+      expect(storyErrors, "the story's play function or render threw").toEqual([]);
 
       // A play function's last click leaves focus (and sometimes a
       // :focus-visible ring) on whatever it clicked, depending on timing --

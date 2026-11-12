@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn } from "storybook/test";
+import { t } from "../mocks/text";
 import * as fixtures from "../mocks/fixtures";
 import PatternCard from "./PatternCard";
 
@@ -15,14 +16,14 @@ type Story = StoryObj<typeof meta>;
 export const Public: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.getByRole("link", { name: "Simple Garter Scarf" })).toHaveAttribute("href", "/pattern/43");
-    await expect(canvas.queryByText("Private")).not.toBeInTheDocument();
+    await expect(canvas.queryByText(t("patternCard.private"))).not.toBeInTheDocument();
   },
 };
 
 export const Private: Story = {
   args: { pattern: fixtures.pattern },
   play: async ({ canvas }) => {
-    await expect(canvas.getByText("Private")).toBeInTheDocument();
+    await expect(canvas.getByText(t("patternCard.private"))).toBeInTheDocument();
   },
 };
 
@@ -51,7 +52,7 @@ export const HebrewTitle: Story = {
 export const SaveToggle: Story = {
   args: { onToggleSave: fn(), isSaved: false },
   play: async ({ canvas, userEvent, args }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "Save" }));
+    await userEvent.click(canvas.getByRole("button", { name: t("patternCard.save") }));
     await expect(args.onToggleSave).toHaveBeenCalledWith(fixtures.publicPattern);
   },
 };
@@ -59,6 +60,6 @@ export const SaveToggle: Story = {
 export const Saved: Story = {
   args: { onToggleSave: fn(), isSaved: true },
   play: async ({ canvas }) => {
-    await expect(canvas.getByRole("button", { name: "Remove from Saved" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: t("patternCard.removeSaved") })).toBeInTheDocument();
   },
 };

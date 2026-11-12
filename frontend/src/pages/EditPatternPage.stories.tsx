@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Route, Routes, useLocation } from "react-router-dom";
 import { expect } from "storybook/test";
+import { t } from "../mocks/text";
 import * as fixtures from "../mocks/fixtures";
 import { loggedIn, patternIs, patternNotFound, saveEditFails } from "../mocks/handlers";
 import EditPatternPage from "./EditPatternPage";
@@ -31,10 +32,10 @@ type Story = StoryObj<typeof meta>;
 
 export const EditAndSave: Story = {
   play: async ({ canvas, userEvent }) => {
-    const title = await canvas.findByLabelText("Title");
+    const title = await canvas.findByLabelText(t("reviewForm.titleLabel"));
     await userEvent.clear(title);
     await userEvent.type(title, "Cozy Raglan, revised");
-    await userEvent.click(canvas.getByRole("button", { name: "Save Changes" }));
+    await userEvent.click(canvas.getByRole("button", { name: t("editPattern.saveButton") }));
     await expect(await canvas.findByTestId("landed")).toHaveTextContent("/pattern/42");
   },
 };
@@ -42,14 +43,14 @@ export const EditAndSave: Story = {
 export const WithHebrewTranslation: Story = {
   parameters: { msw: { handlers: { pattern: patternIs(withHebrew) } } },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByRole("heading", { name: "Hebrew translation" })).toBeInTheDocument();
+    await expect(await canvas.findByRole("heading", { name: t("editPattern.translationHeadingHe") })).toBeInTheDocument();
   },
 };
 
 export const SaveFails: Story = {
   parameters: { msw: { handlers: { pattern: patternIs(withHebrew), saveEdit: saveEditFails } } },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByRole("button", { name: "Save Changes" }));
+    await userEvent.click(await canvas.findByRole("button", { name: t("editPattern.saveButton") }));
     await expect(await canvas.findByRole("alert")).toBeVisible();
   },
 };
@@ -57,14 +58,14 @@ export const SaveFails: Story = {
 export const NoPermission: Story = {
   parameters: { msw: { handlers: { pattern: patternIs(fixtures.sharedViewOnlyPattern) } } },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByText("You don't have permission to edit this pattern.")).toBeInTheDocument();
+    await expect(await canvas.findByText(t("editPattern.permissionDenied"))).toBeInTheDocument();
   },
 };
 
 export const NotFound: Story = {
   parameters: { msw: { handlers: { pattern: patternNotFound } } },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByText("Pattern not found.")).toBeInTheDocument();
+    await expect(await canvas.findByText(t("editPattern.notFound"))).toBeInTheDocument();
   },
 };
 

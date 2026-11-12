@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, waitFor } from "storybook/test";
+import { t } from "../mocks/text";
 import * as fixtures from "../mocks/fixtures";
 import { previewFails, previewPending } from "../mocks/handlers";
 import TextPatternForm from "./TextPatternForm";
@@ -16,15 +17,15 @@ type Story = StoryObj<typeof meta>;
 
 export const Empty: Story = {
   play: async ({ canvas }) => {
-    await expect(canvas.getByRole("button", { name: "Preview" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: t("submit.textButton") })).toBeDisabled();
   },
 };
 
 export const SubmitsAndReturnsDraft: Story = {
   play: async ({ canvas, userEvent, args }) => {
-    await userEvent.type(canvas.getByLabelText("Pattern text"), PASTED);
-    await userEvent.type(canvas.getByLabelText("Original link (optional)"), "https://example.com/beanie");
-    await userEvent.click(canvas.getByRole("button", { name: "Preview" }));
+    await userEvent.type(canvas.getByLabelText(t("submit.textLabel")), PASTED);
+    await userEvent.type(canvas.getByLabelText(t("submit.sourceUrlLabel")), "https://example.com/beanie");
+    await userEvent.click(canvas.getByRole("button", { name: t("submit.textButton") }));
     await waitFor(() =>
       expect(args.onResult).toHaveBeenCalledWith(
         expect.objectContaining({ draft: fixtures.draft }),
@@ -37,8 +38,8 @@ export const SubmitsAndReturnsDraft: Story = {
 export const ServerCantReadIt: Story = {
   parameters: { msw: { handlers: { preview: previewFails } } },
   play: async ({ canvas, userEvent, args }) => {
-    await userEvent.type(canvas.getByLabelText("Pattern text"), "just some words");
-    await userEvent.click(canvas.getByRole("button", { name: "Preview" }));
+    await userEvent.type(canvas.getByLabelText(t("submit.textLabel")), "just some words");
+    await userEvent.click(canvas.getByRole("button", { name: t("submit.textButton") }));
     await expect(await canvas.findByRole("alert")).toBeVisible();
     await expect(args.onResult).not.toHaveBeenCalled();
   },
@@ -47,8 +48,8 @@ export const ServerCantReadIt: Story = {
 export const Processing: Story = {
   parameters: { msw: { handlers: { preview: previewPending } } },
   play: async ({ canvas, userEvent }) => {
-    await userEvent.type(canvas.getByLabelText("Pattern text"), PASTED);
-    await userEvent.click(canvas.getByRole("button", { name: "Preview" }));
-    await expect(await canvas.findByRole("button", { name: "Processing..." })).toBeDisabled();
+    await userEvent.type(canvas.getByLabelText(t("submit.textLabel")), PASTED);
+    await userEvent.click(canvas.getByRole("button", { name: t("submit.textButton") }));
+    await expect(await canvas.findByRole("button", { name: t("submit.processing") })).toBeDisabled();
   },
 };

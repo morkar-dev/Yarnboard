@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState, type ComponentProps } from "react";
 import { expect, fn, within } from "storybook/test";
+import { t } from "../mocks/text";
 import * as fixtures from "../mocks/fixtures";
 import PatternReviewForm from "./PatternReviewForm";
 
@@ -41,7 +42,7 @@ export const Draft: Story = {};
 export const WithFoundPhoto: Story = {
   args: { draft: { ...fixtures.draft, photo_url: PHOTO } },
   play: async ({ canvas, userEvent, args }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "Remove this photo" }));
+    await userEvent.click(canvas.getByRole("button", { name: t("reviewForm.removePhoto") }));
     await expect(args.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ photo_url: null }));
     await expect(canvas.queryByRole("img")).not.toBeInTheDocument();
   },
@@ -49,35 +50,35 @@ export const WithFoundPhoto: Story = {
 
 export const EditTitleAndParts: Story = {
   play: async ({ canvas, userEvent, args }) => {
-    const title = canvas.getByLabelText("Title");
+    const title = canvas.getByLabelText(t("reviewForm.titleLabel"));
     await userEvent.clear(title);
     await userEvent.type(title, "Raglan, v2");
     await expect(args.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Raglan, v2" }));
 
-    await userEvent.click(canvas.getByRole("button", { name: "+ Add part" }));
+    await userEvent.click(canvas.getByRole("button", { name: t("reviewForm.addPart") }));
     await expect(Object.keys((args.onChange as ReturnType<typeof fn>).mock.lastCall![0].instructions)).toEqual([
       "Body",
       "Sleeves",
       "Part 3",
     ]);
 
-    await userEvent.click(canvas.getByRole("button", { name: 'Move part "Sleeves" up' }));
+    await userEvent.click(canvas.getByRole("button", { name: t("reviewForm.movePartUpAria", { part: "Sleeves" }) }));
     await expect(Object.keys((args.onChange as ReturnType<typeof fn>).mock.lastCall![0].instructions)).toEqual([
       "Sleeves",
       "Body",
       "Part 3",
     ]);
 
-    await userEvent.click(canvas.getByRole("button", { name: 'Delete part "Part 3"' }));
+    await userEvent.click(canvas.getByRole("button", { name: t("reviewForm.deletePartAria", { part: "Part 3" }) }));
     await expect(canvas.queryByDisplayValue("Part 3")).not.toBeInTheDocument();
   },
 };
 
 export const AddStepToPart: Story = {
   play: async ({ canvas, userEvent }) => {
-    const sleeves = canvas.getByLabelText('Step 1 of "Sleeves"').closest(".card") as HTMLElement;
-    await userEvent.click(within(sleeves).getByRole("button", { name: "+ Add step" }));
-    await expect(canvas.getByLabelText('Step 2 of "Sleeves"')).toHaveValue("");
+    const sleeves = canvas.getByLabelText(t("reviewForm.stepAria", { number: 1, part: "Sleeves" })).closest(".card") as HTMLElement;
+    await userEvent.click(within(sleeves).getByRole("button", { name: t("reviewForm.addStep") }));
+    await expect(canvas.getByLabelText(t("reviewForm.stepAria", { number: 2, part: "Sleeves" }))).toHaveValue("");
   },
 };
 

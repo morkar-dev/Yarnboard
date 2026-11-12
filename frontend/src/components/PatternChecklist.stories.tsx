@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor } from "storybook/test";
+import { t } from "../mocks/text";
 import { loggedIn, loggedOut, progressFails } from "../mocks/handlers";
 import type { InstructionsMap } from "../types/models";
 import PatternChecklist from "./PatternChecklist";
@@ -38,8 +39,8 @@ type Story = StoryObj<typeof meta>;
 /** The checklist mounts before the fake session check answers (as a
  * guest), then switches to logged-in -- wait for that before clicking, or
  * the click takes the guest (localStorage) path instead of the API. */
-const sessionLoaded = (canvas: { queryByText: (t: RegExp) => HTMLElement | null }) =>
-  waitFor(() => expect(canvas.queryByText(/checking items off as a guest/)).not.toBeInTheDocument());
+const sessionLoaded = (canvas: { queryByText: (text: string) => HTMLElement | null }) =>
+  waitFor(() => expect(canvas.queryByText(t("checklist.guestNotice"))).not.toBeInTheDocument());
 
 export const LoggedIn: Story = {
   play: async ({ canvas, userEvent }) => {
@@ -63,7 +64,7 @@ export const SaveFailsAndReverts: Story = {
 export const Guest: Story = {
   parameters: { msw: { handlers: { auth: loggedOut } } },
   play: async ({ canvas, userEvent }) => {
-    await expect(canvas.getByText(/checking items off as a guest/)).toBeInTheDocument();
+    await expect(canvas.getByText(t("checklist.guestNotice"))).toBeInTheDocument();
     await userEvent.click(canvas.getByLabelText("Cast on 40 stitches."));
     await expect(JSON.parse(localStorage.getItem("yarnboard:guest-progress:42")!)).toEqual({
       Sleeves: [true],
@@ -73,27 +74,27 @@ export const Guest: Story = {
 
 export const RowCounter: Story = {
   play: async ({ canvas, userEvent }) => {
-    const more = canvas.getByRole("button", { name: "One row done" });
+    const more = canvas.getByRole("button", { name: t("checklist.counterIncrease") });
     await userEvent.click(more);
     await userEvent.click(more);
-    await expect(canvas.getByText("2 / 6 rows (next: row 3)")).toBeInTheDocument();
+    await expect(canvas.getByText(t("checklist.counterProgress", { done: 2, count: 6, row: 3 }))).toBeInTheDocument();
     for (let i = 0; i < 4; i++) await userEvent.click(more);
-    await expect(canvas.getByText("All 6 rows done")).toBeInTheDocument();
-    await userEvent.click(canvas.getByRole("button", { name: "One row back" }));
-    await expect(canvas.getByText("5 / 6 rows (next: row 6)")).toBeInTheDocument();
+    await expect(canvas.getByText(t("checklist.counterDone", { count: 6 }))).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: t("checklist.counterDecrease") }));
+    await expect(canvas.getByText(t("checklist.counterProgress", { done: 5, count: 6, row: 6 }))).toBeInTheDocument();
   },
 };
 
 export const CollapseAndClearAll: Story = {
   play: async ({ canvas, userEvent }) => {
     await sessionLoaded(canvas);
-    await userEvent.click(canvas.getByRole("button", { name: "Collapse all" }));
-    await expect(canvas.getByRole("button", { name: "Expand all" })).toBeInTheDocument();
-    await userEvent.click(canvas.getByRole("button", { name: "Expand all" }));
+    await userEvent.click(canvas.getByRole("button", { name: t("checklist.collapseAll") }));
+    await expect(canvas.getByRole("button", { name: t("checklist.expandAll") })).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: t("checklist.expandAll") }));
 
-    await userEvent.click(canvas.getByRole("button", { name: "Clear all checks" }));
+    await userEvent.click(canvas.getByRole("button", { name: t("checklist.clearAll") }));
     await waitFor(() => expect(canvas.getByLabelText("Cast on 120 stitches.")).not.toBeChecked());
-    await expect(canvas.getByRole("button", { name: "Clear all checks" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: t("checklist.clearAll") })).toBeDisabled();
   },
 };
 

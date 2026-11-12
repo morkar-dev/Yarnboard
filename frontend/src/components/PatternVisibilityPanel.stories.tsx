@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, waitFor } from "storybook/test";
+import { t } from "../mocks/text";
 import * as fixtures from "../mocks/fixtures";
 import { loggedIn, sharesWith } from "../mocks/handlers";
 import PatternVisibilityPanel from "./PatternVisibilityPanel";
@@ -33,25 +34,25 @@ export const PrivateWithShares: Story = {
 export const PrivateNotShared: Story = {
   parameters: { msw: { handlers: { shares: sharesWith([]) } } },
   play: async ({ canvas }) => {
-    await expect(await canvas.findByText("Not shared with anyone yet.")).toBeInTheDocument();
+    await expect(await canvas.findByText(t("visibility.noShares"))).toBeInTheDocument();
   },
 };
 
 export const Public: Story = {
   args: { pattern: { ...fixtures.pattern, is_public: true } },
   play: async ({ canvas }) => {
-    await expect(canvas.getByRole("button", { name: "Unpublish" })).toBeInTheDocument();
-    await expect(canvas.queryByText("Shared with")).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: t("visibility.unpublishButton") })).toBeInTheDocument();
+    await expect(canvas.queryByText(t("visibility.sharedWithHeading"))).not.toBeInTheDocument();
   },
 };
 
 export const PublishNeedsConsent: Story = {
   parameters: { msw: { handlers: { shares: sharesWith([]) } } },
   play: async ({ canvas, userEvent, args }) => {
-    await userEvent.click(canvas.getByRole("button", { name: "Publish to Community" }));
-    const confirm = canvas.getByRole("button", { name: "Confirm & Publish" });
+    await userEvent.click(canvas.getByRole("button", { name: t("visibility.publishButton") }));
+    const confirm = canvas.getByRole("button", { name: t("publishConsent.confirmButton") });
     await expect(confirm).toBeDisabled();
-    await userEvent.click(canvas.getByLabelText("I understand this pattern will be published publicly."));
+    await userEvent.click(canvas.getByLabelText(t("publishConsent.checkboxLabel")));
     await userEvent.click(confirm);
     await waitFor(() =>
       expect(args.onPatternChange).toHaveBeenCalledWith(expect.objectContaining({ is_public: true })),
@@ -62,25 +63,25 @@ export const PublishNeedsConsent: Story = {
 export const ShareAsEditorAndToggle: Story = {
   parameters: { msw: { handlers: { shares: sharesWith([]) } } },
   play: async ({ canvas, userEvent }) => {
-    await canvas.findByText("Not shared with anyone yet.");
-    await userEvent.type(canvas.getByPlaceholderText("Username"), "robin");
-    await userEvent.click(canvas.getByLabelText("Allow this person to edit the pattern"));
-    await userEvent.click(canvas.getByRole("button", { name: "Share" }));
-    const canEdit = await canvas.findByLabelText("Can edit");
+    await canvas.findByText(t("visibility.noShares"));
+    await userEvent.type(canvas.getByPlaceholderText(t("visibility.shareUsernamePlaceholder")), "robin");
+    await userEvent.click(canvas.getByLabelText(t("visibility.shareAsEditor")));
+    await userEvent.click(canvas.getByRole("button", { name: t("visibility.shareButton") }));
+    const canEdit = await canvas.findByLabelText(t("visibility.canEdit"));
     await expect(canEdit).toBeChecked();
     await userEvent.click(canEdit);
     await waitFor(() => expect(canEdit).not.toBeChecked());
-    await userEvent.click(canvas.getByRole("button", { name: "Remove" }));
-    await expect(await canvas.findByText("Not shared with anyone yet.")).toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: t("visibility.removeShare") }));
+    await expect(await canvas.findByText(t("visibility.noShares"))).toBeInTheDocument();
   },
 };
 
 export const ShareWithUnknownUser: Story = {
   parameters: { msw: { handlers: { shares: sharesWith([]) } } },
   play: async ({ canvas, userEvent }) => {
-    await canvas.findByText("Not shared with anyone yet.");
-    await userEvent.type(canvas.getByPlaceholderText("Username"), "nobody");
-    await userEvent.click(canvas.getByRole("button", { name: "Share" }));
+    await canvas.findByText(t("visibility.noShares"));
+    await userEvent.type(canvas.getByPlaceholderText(t("visibility.shareUsernamePlaceholder")), "nobody");
+    await userEvent.click(canvas.getByRole("button", { name: t("visibility.shareButton") }));
     await expect(await canvas.findByRole("alert")).toBeVisible();
   },
 };
