@@ -218,6 +218,7 @@
     "movePartUpAria": "הזזת חלק \"{{part}}\" למעלה",
     "movePartDown": "הזזת חלק למטה",
     "movePartDownAria": "הזזת חלק \"{{part}}\" למטה",
+    "partNameAria": "שם חלק {{number}}",
     "deletePart": "מחיקת חלק",
     "deletePartAria": "מחיקת חלק \"{{part}}\"",
     "deleteStepAria": "מחיקת שלב {{number}} מתוך \"{{part}}\"",
@@ -314,6 +315,8 @@
     "translationTitleLabel": "כותרת",
     "translationMaterialsLabel": "חומרים",
     "translationAbbreviationsLabel": "קיצורים",
+    "translationPartHeadingAria": "כותרת מתורגמת לחלק \"{{part}}\"",
+    "translationStepAria": "תרגום שלב {{number}} מתוך \"{{part}}\"",
     "translationInstructionsHeading": "הוראות",
     "translationReviewedNotice": "שמירת השדות האלה גם מסמנת את התרגום כנבדק."
   },

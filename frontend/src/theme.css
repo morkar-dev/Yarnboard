@@ -76,6 +76,31 @@
   --bs-btn-focus-shadow-rgb: var(--yb-eggplant-rgb);
 }
 
+/* Bootstrap's #6c757d gray outline text measures 4.45:1 against
+   --yb-bg (just under WCAG AA's 4.5:1 for normal text -- flagged by the
+   Storybook a11y tests). Bootstrap's own one-step-darker secondary gray
+   keeps the same look and passes on every light surface here. */
+.btn-outline-secondary {
+  --bs-btn-color: #5c636a;
+  --bs-btn-border-color: #5c636a;
+  --bs-btn-disabled-color: #5c636a;
+}
+
+/* Same story for Bootstrap's #dc3545 red as text (outline buttons, the
+   .text-danger "Remove" links): 4.29:1 on --yb-bg. #b02a37 is
+   Bootstrap's own darker danger shade (6.17:1). Hover/active keep the
+   default red fill -- white on #dc3545 already passes (4.53:1). */
+.btn-outline-danger {
+  --bs-btn-color: #b02a37;
+  --bs-btn-border-color: #b02a37;
+  --bs-btn-disabled-color: #b02a37;
+  --bs-btn-disabled-border-color: #b02a37;
+}
+
+.text-danger {
+  color: #b02a37 !important;
+}
+
 .form-control:focus,
 .form-select:focus {
   border-color: var(--yb-eggplant-light);
@@ -127,4 +152,12 @@
 .text-body-secondary,
 .text-muted {
   color: var(--yb-text-muted) !important;
+}
+
+/* ...but that tint is for light surfaces only. Inside the dark navbar
+   (data-bs-theme="dark", e.g. the notification bell's dropdown) it
+   measured 2.93:1 -- use a light tint of the same hue there (8:1). */
+[data-bs-theme="dark"] .text-body-secondary,
+[data-bs-theme="dark"] .text-muted {
+  color: #c9b5ce !important;
 }

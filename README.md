@@ -194,6 +194,39 @@ in your own shell only, never commit it.
 Not run in CI, and deliberately doesn't check real email delivery -- see
 `frontend/e2e-dev/notifications.spec.ts`'s docstring for why.
 
+## Storybook: component, accessibility and visual tests
+
+Every component (and the pattern detail, submit and edit pages) has
+stories in `frontend/src/**/*.stories.tsx` -- each one a fixed UI state
+(guest vs logged in, empty, error, loading, Hebrew/RTL, phone width). They
+run against a fake API (MSW, `frontend/src/mocks/`), never the backend.
+
+```bash
+npm --prefix frontend run storybook        # browse them at localhost:6006
+npm --prefix frontend run test:stories     # interaction tests + axe a11y scan
+```
+
+`test:stories` renders every story in headless Chromium, runs its `play`
+function (clicks, typing, assertions), then fails on any accessibility
+violation. If a rule genuinely can't be fixed yet, switch it off on that
+one story with a comment rather than globally.
+
+Visual regression compares a screenshot of every story, in English and
+Hebrew, with the PNGs in `frontend/visual/__screenshots__/<os>/`:
+
+```bash
+npm --prefix frontend run build-storybook
+npm --prefix frontend run test:visual          # compare
+npm --prefix frontend run test:visual:update   # accept an intended change
+```
+
+A story with no baseline yet gets one written instead of failing; review
+and commit new/changed PNGs like any other diff (the report lands in
+`frontend/visual-report/`). Baselines are per OS because fonts render
+differently: `darwin/` is for local runs on a Mac, `linux/` is CI's -- the
+first `frontend-stories` CI run writes them; download that job's artifacts
+and commit `frontend/visual/__screenshots__/linux/`.
+
 ## GitLab CI
 
 `.gitlab-ci.yml` runs the checks; results show on each merge request, in

@@ -88,11 +88,47 @@ frontend-checks:
     - cd frontend
     - npm ci --prefer-offline
     - npx tsc -b
-    - npx vitest run --reporter=default --reporter=junit --outputFile.junit=junit.xml
+    # Unit tests only -- the Storybook project needs a real browser, see
+    # frontend-stories below.
+    - npx vitest run --project=unit --reporter=default --reporter=junit --outputFile.junit=junit.xml
   artifacts:
     when: always
     reports:
       junit: frontend/junit.xml
+
+# Every Storybook story (frontend/src/**/*.stories.tsx) rendered in real
+# Chromium against a fake API (MSW): interaction tests + an axe
+# accessibility scan per story, then a screenshot of each story in English
+# and Hebrew compared with frontend/visual/__screenshots__/linux/.
+#
+# Baselines: a story with no Linux baseline yet gets one written instead
+# of failing. Download them from this job's artifacts
+# (frontend/visual/__screenshots__/linux/) and commit them to lock them in.
+# After an intended UI change, delete the affected PNGs (or the folder) and
+# let the next run write fresh ones.
+frontend-stories:
+  stage: test
+  # Must match the installed @playwright/test version (package-lock.json).
+  image: mcr.microsoft.com/playwright:v1.63.0-noble
+  <<: *test-rules
+  cache:
+    key:
+      files: [frontend/package-lock.json]
+    paths: [.cache/npm]
+  script:
+    - cd frontend
+    - npm ci --prefer-offline
+    - npx vitest run --project=storybook --reporter=default --reporter=junit --outputFile.junit=stories-junit.xml
+    - npm run build-storybook
+    - npm run test:visual
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - frontend/visual-report/
+      - frontend/visual/__screenshots__/linux/
+    reports:
+      junit: frontend/stories-junit.xml
 
 backend-dependency-audit:
   stage: test

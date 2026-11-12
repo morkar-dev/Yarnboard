@@ -217,6 +217,7 @@
     "movePartUpAria": "Move part \"{{part}}\" up",
     "movePartDown": "Move part down",
     "movePartDownAria": "Move part \"{{part}}\" down",
+    "partNameAria": "Name of part {{number}}",
     "deletePart": "Delete part",
     "deletePartAria": "Delete part \"{{part}}\"",
     "deleteStepAria": "Delete step {{number}} of \"{{part}}\"",
@@ -313,6 +314,8 @@
     "translationTitleLabel": "Title",
     "translationMaterialsLabel": "Materials",
     "translationAbbreviationsLabel": "Abbreviations",
+    "translationPartHeadingAria": "Translated heading of part \"{{part}}\"",
+    "translationStepAria": "Translation of step {{number}} of \"{{part}}\"",
     "translationInstructionsHeading": "Instructions",
     "translationReviewedNotice": "Marking these fields as saved also marks the translation as reviewed."
   },

@@ -234,3 +234,8 @@ frontend/e2e-smoke/.state.json
 frontend/e2e-smoke/.env
 frontend/smoke-results/
 frontend/tsconfig.tsbuildinfo
+
+# Storybook (frontend/.storybook) build output, logs and visual-test results
+*storybook.log
+storybook-static
+frontend/visual-report/
