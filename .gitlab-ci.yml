@@ -101,11 +101,13 @@ frontend-checks:
 # accessibility scan per story, then a screenshot of each story in English
 # and Hebrew compared with frontend/visual/__screenshots__/linux/.
 #
-# Baselines: a story with no Linux baseline yet gets one written instead
-# of failing. Download them from this job's artifacts
-# (frontend/visual/__screenshots__/linux/) and commit them to lock them in.
-# After an intended UI change, delete the affected PNGs (or the folder) and
-# let the next run write fresh ones.
+# Baselines are strict: if a run had to write any Linux baseline that isn't
+# committed yet (a new story, or the very first run), the job FAILS and
+# lists them -- otherwise a branch that never commits them would pass
+# forever without comparing anything. The new PNGs are in this job's
+# artifacts (frontend/visual/__screenshots__/linux/): review them, commit
+# them, and the next run compares against them. After an intended UI
+# change, delete the affected PNGs and do the same.
 frontend-stories:
   stage: test
   # Must match the installed @playwright/test version (package-lock.json).
@@ -120,13 +122,25 @@ frontend-stories:
     - npm ci --prefer-offline
     - npx vitest run --project=storybook --reporter=default --reporter=junit --outputFile.junit=stories-junit.xml
     - npm run build-storybook
+    - mkdir -p visual/__screenshots__/linux
+    - find visual/__screenshots__/linux -name '*.png' | sort > /tmp/baselines-before.txt
     - npm run test:visual
+    - find visual/__screenshots__/linux -name '*.png' | sort > /tmp/baselines-after.txt
+    - comm -13 /tmp/baselines-before.txt /tmp/baselines-after.txt > visual-new-baselines.txt
+    - |
+      if [ -s visual-new-baselines.txt ]; then
+        echo "$(wc -l < visual-new-baselines.txt) screenshot baseline(s) were missing for Linux and have been written:"
+        cat visual-new-baselines.txt
+        echo "Download them from this job's artifacts (frontend/visual/__screenshots__/linux/), review and commit them."
+        exit 1
+      fi
   artifacts:
     when: always
     expire_in: 14 days
     paths:
       - frontend/visual-report/
       - frontend/visual/__screenshots__/linux/
+      - frontend/visual-new-baselines.txt
     reports:
       junit: frontend/stories-junit.xml
 

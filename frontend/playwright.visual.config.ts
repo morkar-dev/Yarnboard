@@ -6,11 +6,12 @@ import { defineConfig, devices } from "@playwright/test";
  * locally -- nothing is uploaded to any third-party service.
  *
  * Fonts and anti-aliasing differ per OS, so baselines are kept per
- * platform (visual/__screenshots__/darwin/, .../linux/). A baseline that
- * doesn't exist yet is written on the first run and the test passes with
- * a "new baseline" note (see visual/stories.spec.ts -- Playwright's own
- * updateSnapshots "missing" mode writes the file but fails the test) --
- * commit the new PNGs to lock them in.
+ * platform (visual/__screenshots__/darwin/, .../linux/). In the default
+ * mode a baseline that doesn't exist yet is written and the test passes
+ * with a "new baseline" note (see visual/stories.spec.ts); with
+ * `--update-snapshots=none` a missing baseline fails. CI fails the job
+ * whenever a run had to write a new Linux baseline (.gitlab-ci.yml), so
+ * they must be committed before anything passes there.
  * After an intended UI change: `npm run test:visual:update`, review the
  * changed PNGs in the diff, commit.
  */

@@ -68,13 +68,16 @@ for (const story of stories) {
       const info = test.info();
       const baseline = info.snapshotPath(name, { kind: "screenshot" });
 
-      // No baseline for this OS yet (a new story, or CI's very first run
-      // on Linux): save one and pass, noting it, instead of failing --
-      // Playwright's own "missing" mode writes the file but still fails
-      // the test. Review and commit the new PNG (CI keeps them as job
-      // artifacts). `--update-snapshots` runs skip this and let
-      // toHaveScreenshot rewrite every baseline as usual.
-      if (info.config.updateSnapshots !== "all" && info.config.updateSnapshots !== "changed" && !existsSync(baseline)) {
+      // No baseline for this OS yet (a new story, or the first run on a
+      // new OS): in the default "missing" mode, save one and pass with a
+      // note, instead of Playwright's own behavior there (write the file,
+      // fail the test anyway). Every other mode goes to toHaveScreenshot:
+      //   - "none" is the strict mode -- a missing baseline must fail;
+      //   - "all"/"changed" (--update-snapshots) rewrite as usual.
+      // Passing here is not the end of it in CI: the frontend-stories job
+      // fails if a run wrote any new Linux baseline (see .gitlab-ci.yml),
+      // so new PNGs have to be downloaded from its artifacts and committed.
+      if (info.config.updateSnapshots === "missing" && !existsSync(baseline)) {
         mkdirSync(path.dirname(baseline), { recursive: true });
         await page.screenshot({ path: baseline, fullPage: true, animations: "disabled", caret: "hide", style: SCREENSHOT_CSS });
         info.annotations.push({ type: "new baseline", description: path.relative(here, baseline) });

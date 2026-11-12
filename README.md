@@ -220,12 +220,20 @@ npm --prefix frontend run test:visual          # compare
 npm --prefix frontend run test:visual:update   # accept an intended change
 ```
 
-A story with no baseline yet gets one written instead of failing; review
-and commit new/changed PNGs like any other diff (the report lands in
-`frontend/visual-report/`). Baselines are per OS because fonts render
-differently: `darwin/` is for local runs on a Mac, `linux/` is CI's -- the
-first `frontend-stories` CI run writes them; download that job's artifacts
-and commit `frontend/visual/__screenshots__/linux/`.
+Baselines are per OS because fonts render differently: `darwin/` is for
+local runs on a Mac, `linux/` is CI's. Locally, a story with no baseline
+yet gets one written and passes (with a "new baseline" note); add
+`-- --update-snapshots=none` for the strict mode, where a missing baseline
+fails. Review and commit new/changed PNGs like any other diff (the report
+lands in `frontend/visual-report/`).
+
+CI is strict about Linux baselines: if a `frontend-stories` run had to
+write any (a new story, or the very first run), the job fails and lists
+them in `visual-new-baselines.txt`. Download that job's artifacts, review
+the PNGs, and commit them under `frontend/visual/__screenshots__/linux/`;
+the next run compares against them. That's also how to accept an
+intended UI change on Linux: delete the affected PNGs and let CI write
+fresh ones.
 
 ## GitLab CI
 
