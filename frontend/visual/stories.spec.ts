@@ -8,7 +8,7 @@
  * interaction tests use -- including its play function, so a story like
  * "OpenInboxAndMarkAllRead" is captured in its after-interaction state.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
@@ -31,6 +31,10 @@ const stories = Object.values(index.entries).filter((e) => e.type === "story");
 const NO_SCREENSHOT = new Set(["pages-patterndetailpage--loading", "components-textpatternform--processing"]);
 
 const LOCALES = ["en", "he"] as const;
+
+/** Same CSS toHaveScreenshot applies (playwright.visual.config.ts's
+ * stylePath), so a baseline written below matches later comparisons. */
+const SCREENSHOT_CSS = readFileSync(path.join(here, "screenshot.css"), "utf8");
 
 for (const story of stories) {
   for (const locale of LOCALES) {
@@ -60,7 +64,24 @@ for (const story of stories) {
       await page.mouse.move(0, 0);
       if (NO_SCREENSHOT.has(story.id)) return;
 
-      await expect(page).toHaveScreenshot(`${story.id}--${locale}.png`, { fullPage: true });
+      const name = `${story.id}--${locale}.png`;
+      const info = test.info();
+      const baseline = info.snapshotPath(name, { kind: "screenshot" });
+
+      // No baseline for this OS yet (a new story, or CI's very first run
+      // on Linux): save one and pass, noting it, instead of failing --
+      // Playwright's own "missing" mode writes the file but still fails
+      // the test. Review and commit the new PNG (CI keeps them as job
+      // artifacts). `--update-snapshots` runs skip this and let
+      // toHaveScreenshot rewrite every baseline as usual.
+      if (info.config.updateSnapshots !== "all" && info.config.updateSnapshots !== "changed" && !existsSync(baseline)) {
+        mkdirSync(path.dirname(baseline), { recursive: true });
+        await page.screenshot({ path: baseline, fullPage: true, animations: "disabled", caret: "hide", style: SCREENSHOT_CSS });
+        info.annotations.push({ type: "new baseline", description: path.relative(here, baseline) });
+        return;
+      }
+
+      await expect(page).toHaveScreenshot(name, { fullPage: true });
     });
   }
 }

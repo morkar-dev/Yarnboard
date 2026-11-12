@@ -7,8 +7,10 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * Fonts and anti-aliasing differ per OS, so baselines are kept per
  * platform (visual/__screenshots__/darwin/, .../linux/). A baseline that
- * doesn't exist yet is written on the first run instead of failing
- * (updateSnapshots: "missing") -- commit the new PNGs to lock them in.
+ * doesn't exist yet is written on the first run and the test passes with
+ * a "new baseline" note (see visual/stories.spec.ts -- Playwright's own
+ * updateSnapshots "missing" mode writes the file but fails the test) --
+ * commit the new PNGs to lock them in.
  * After an intended UI change: `npm run test:visual:update`, review the
  * changed PNGs in the diff, commit.
  */
@@ -17,7 +19,6 @@ const PORT = 6007;
 export default defineConfig({
   testDir: "./visual",
   snapshotPathTemplate: "{testDir}/__screenshots__/{platform}/{arg}{ext}",
-  updateSnapshots: "missing",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
