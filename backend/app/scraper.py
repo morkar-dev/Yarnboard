@@ -217,7 +217,7 @@ def parse_pattern_html(html: str, source_url: str) -> dict:
     }
 
 
-def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
+def parse_pattern_pdf(pdf_bytes: bytes, source_url: str | None) -> dict:
     """
     Heuristically extract a pattern draft from a PDF file's raw bytes.
 
@@ -225,9 +225,12 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
     "never assume this is correct" caveat) -- called from the upload path
     (POST /api/patterns/preview-upload) when the uploaded file is a PDF
     rather than saved HTML, and from the CLI at the bottom of this file.
-    `source_url` is still whatever URL the user typed alongside the
-    upload (a PDF has no notion of "the page it came from" on its own),
-    used the same way for dedup/attribution as the HTML upload path.
+    `source_url` is whatever URL the user typed alongside the upload, or
+    None -- unlike saved HTML, a PDF often has no web page at all (a paid
+    download, a file someone emailed), so the link is optional. When
+    given, it's used the same way for dedup/attribution as the HTML path.
+
+    The author comes from the file itself -- see _pdf_author.
 
     PDFs have no tags, so the two HTML-specific signals _extract_sections
     relies on need PDF equivalents: "is this a heading/bold tag" becomes
@@ -240,8 +243,9 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
     """
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            metadata_title = (pdf.metadata or {}).get("Title")
-            metadata_author = (pdf.metadata or {}).get("Author")
+            metadata = pdf.metadata or {}
+            metadata_title = metadata.get("Title")
+            xmp_creators = _pdf_xmp_creators(pdf)
 
             lines: list[str] = []
             label_texts: set[str] = set()
@@ -270,13 +274,11 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
     else:
         title = "Untitled Pattern"
 
-    author = metadata_author.strip() if metadata_author and metadata_author.strip() else None
-    if not author:
-        author = _find_author_phrase("\n".join(lines))
+    author = _pdf_author(metadata, xmp_creators, lines)
 
     materials, abbreviations, instructions = _classify_lines(lines, label_texts, {title})
 
-    domain = _bare_domain(source_url)
+    domain = _bare_domain(source_url) if source_url else None
 
     return {
         "title": title,
@@ -290,6 +292,95 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
         # so both parsers return the same shape.
         "photo_url": None,
     }
+
+
+# Author/Creator values that name nobody: what an OS, an office suite or a
+# shared account fills in by default. Compared case-insensitively.
+PDF_PLACEHOLDER_AUTHORS = {
+    "user", "admin", "administrator", "owner", "unknown", "author", "anonymous",
+    "pc", "windows user", "microsoft office user", "microsoft account", "default",
+}
+# A PDF's "Creator" field is meant to be the program that made the
+# original document -- and in practice almost always is ("Microsoft Word",
+# "Canva", "Adobe InDesign 18.0"). Only a value that matches none of these
+# is treated as a person's name.
+PDF_SOFTWARE_HINTS = re.compile(
+    r"word|office|excel|powerpoint|acrobat|adobe|indesign|illustrator|photoshop|"
+    r"canva|google|docs|pages|keynote|libreoffice|openoffice|writer|quartz|"
+    r"pdf|latex|tex\b|chrom|skia|safari|firefox|mozilla|print|scan|microsoft|"
+    r"mac ?os|windows|ios|android|wps|affinity|figma|inkscape|scribus|"
+    r"version|\bv?\d+(\.\d+)+",
+    re.IGNORECASE,
+)
+
+
+def _pdf_author(metadata: dict, xmp_creators: list[str], lines: list[str]) -> str | None:
+    """
+    The pattern's writer, taken from the PDF itself, best source first:
+      1. the document's Author property,
+      2. its XMP metadata's creator (dc:creator -- where Canva, InDesign
+         and many export tools put the author's name),
+      3. a "by <Name>" / "מאת <name>" byline in the text,
+      4. the Creator property -- only when it isn't the name of a program
+         (see PDF_SOFTWARE_HINTS), which is what it usually holds.
+    Placeholder names ("User", "Microsoft Office User", ...) are skipped
+    at every step. None when nothing names a person: the review form
+    leaves the field blank rather than guessing.
+    """
+    for candidate in [metadata.get("Author"), *xmp_creators]:
+        name = _clean_pdf_name(candidate)
+        if name:
+            return name
+
+    byline = _find_author_phrase("\n".join(lines))
+    if byline:
+        return byline
+
+    creator = _clean_pdf_name(metadata.get("Creator"))
+    if creator and not PDF_SOFTWARE_HINTS.search(creator):
+        return creator
+    return None
+
+
+def _clean_pdf_name(value) -> str | None:
+    """A usable person's name from a PDF metadata value, or None."""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    if not isinstance(value, str):
+        return None
+    name = re.sub(r"\s+", " ", value).strip(" \t;,")
+    if not name or len(name) > 100 or "@" in name:
+        return None
+    if name.lower() in PDF_PLACEHOLDER_AUTHORS:
+        return None
+    return name
+
+
+def _pdf_xmp_creators(pdf) -> list[str]:
+    """The dc:creator entries of a PDF's XMP metadata, in order. Empty if
+    it has none or they can't be read -- a malformed metadata stream must
+    never fail the whole upload."""
+    try:
+        from xml.etree import ElementTree
+
+        from pdfminer.pdftypes import resolve1
+
+        stream = resolve1(pdf.doc.catalog.get("Metadata"))
+        if stream is None:
+            return []
+        root = ElementTree.fromstring(stream.get_data())
+        ns = {
+            "dc": "http://purl.org/dc/elements/1.1/",
+            "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+        }
+        return [
+            li.text.strip()
+            for creator in root.iter(f"{{{ns['dc']}}}creator")
+            for li in creator.iter(f"{{{ns['rdf']}}}li")
+            if li.text and li.text.strip()
+        ]
+    except Exception:
+        return []
 
 
 MANUAL_SOURCE_PREFIX = "manual:"

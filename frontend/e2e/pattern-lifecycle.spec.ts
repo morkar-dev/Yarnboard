@@ -204,3 +204,49 @@ test.describe("submitting a URL someone already shared with you", () => {
     await expect(page.getByLabel("Title")).toHaveValue(title);
   });
 });
+
+test.describe("uploading a PDF", () => {
+  test.use({ storageState: "e2e/.auth/alice.json" });
+
+  // pattern-with-author.pdf names its author only in the file's metadata
+  // (Author property) -- not in the text -- and was made with "Canva",
+  // which must not be mistaken for a person.
+  const PDF_FIXTURE = path.join(__dirname, "pattern-with-author.pdf");
+
+  test("needs no link, and takes the author from the file", async ({ page }) => {
+    await page.goto("/submit");
+    await page.getByRole("button", { name: "Upload a file" }).click();
+
+    // Before a file is picked (or for a saved web page) the link is required.
+    await expect(page.getByLabel("Pattern URL")).toHaveAttribute("required", "");
+
+    await page.getByLabel("Saved HTML or PDF file").setInputFiles(PDF_FIXTURE);
+    const link = page.getByLabel("Original link (optional)");
+    await expect(link).toBeVisible();
+    await expect(link).not.toHaveAttribute("required", "");
+    await expect(page.getByText("The author is read from the PDF itself.", { exact: false })).toBeVisible();
+
+    await page.getByRole("button", { name: "Preview from file" }).click();
+    await expect(page).toHaveURL(/\/submit\/review$/);
+    await expect(page.getByLabel("Title")).toHaveValue("E2E PDF Mittens");
+    await expect(page.getByLabel("Original author")).toHaveValue("Pdf Author Person");
+    await expect(page.getByText("No original link - this pattern will be saved without one.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Save Pattern" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("E2E PDF Mittens");
+    await expect(page.getByText("Pdf Author Person")).toBeVisible();
+    // No source link to show.
+    await expect(page.getByRole("link", { name: /the original site/ })).toHaveCount(0);
+  });
+
+  test("a saved web page still asks for its link", async ({ page }) => {
+    await page.goto("/submit");
+    await page.getByRole("button", { name: "Upload a file" }).click();
+    await page.getByLabel("Saved HTML or PDF file").setInputFiles({
+      name: "page.html",
+      mimeType: "text/html",
+      buffer: Buffer.from("<html><body><h1>Some Page</h1></body></html>"),
+    });
+    await expect(page.getByLabel("Pattern URL")).toHaveAttribute("required", "");
+  });
+});

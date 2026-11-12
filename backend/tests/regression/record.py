@@ -31,7 +31,7 @@ def cmd_new(args) -> None:
     case_dir = CASES_DIR / args.case_id
     if case_dir.exists():
         sys.exit(f"{case_dir} already exists")
-    if args.kind in ("html", "pdf", "url") and not args.url:
+    if args.kind in ("html", "url") and not args.url:
         sys.exit(f"--url is required for kind {args.kind!r} (the page the pattern came from)")
     case_dir.mkdir(parents=True)
     case = {
@@ -104,7 +104,7 @@ def main() -> None:
     new.add_argument("case_id", help="folder name, e.g. drops-air-raglan-url")
     new.add_argument("--kind", required=True, choices=KINDS,
                      help=", ".join(f"{k} (reads {v})" for k, v in DEFAULT_INPUT.items()))
-    new.add_argument("--url", help="where the pattern came from (required for html/pdf/url)")
+    new.add_argument("--url", help="where the pattern came from (required for html/url, optional otherwise)")
     new.add_argument("--description")
     new.set_defaults(func=cmd_new)
 

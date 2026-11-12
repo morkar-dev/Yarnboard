@@ -31,7 +31,7 @@ are format references -- copy one to start.
 |---|---|---|---|
 | `url` | a link pasted on Submit | `page.html`, a snapshot of the live page (`record.py snapshot`) | required |
 | `html` | a saved web page uploaded on Submit | `page.html` | required |
-| `pdf` | a PDF uploaded on Submit | `pattern.pdf` | required |
+| `pdf` | a PDF uploaded on Submit | `pattern.pdf` | optional (the author comes from the file) |
 | `text` | text pasted on Submit | `pattern.txt` | optional |
 | `photos` | photos uploaded on Submit | `transcript.txt`, Gemini's reading of the photos (`record.py transcribe`) | optional |
 

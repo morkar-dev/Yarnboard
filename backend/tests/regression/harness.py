@@ -85,7 +85,7 @@ def load_case(case_dir: Path) -> Case:
     kind = data.get("kind")
     if kind not in KINDS:
         raise CaseError(f"{case_dir.name}: \"kind\" must be one of {list(KINDS)}, got {kind!r}")
-    if kind in ("html", "pdf", "url") and not data.get("source_url"):
+    if kind in ("html", "url") and not data.get("source_url"):
         raise CaseError(f"{case_dir.name}: \"source_url\" is required for kind {kind!r}")
 
     case = Case(
