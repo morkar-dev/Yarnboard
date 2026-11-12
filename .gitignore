@@ -233,3 +233,4 @@ frontend/e2e-smoke/.auth/
 frontend/e2e-smoke/.state.json
 frontend/e2e-smoke/.env
 frontend/smoke-results/
+frontend/tsconfig.tsbuildinfo
