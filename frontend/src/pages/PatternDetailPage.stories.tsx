@@ -92,7 +92,11 @@ export const HebrewUiWithUnreviewedTranslation: Story = {
   },
   play: async ({ canvas }) => {
     await expect(await canvas.findByRole("heading", { name: "סוודר רגלן נעים" })).toBeInTheDocument();
-    await expect(canvas.getByRole("alert")).toBeVisible();
+    // The "machine-translated, not yet reviewed" warning -- by its text,
+    // since the checklist's guest notice is an alert too while the fake
+    // session check is still loading.
+    const alerts = await canvas.findAllByRole("alert");
+    await expect(alerts.find((a) => a.textContent?.includes("תורגם אוטומטית"))).toBeVisible();
   },
 };
 

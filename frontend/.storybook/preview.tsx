@@ -7,7 +7,7 @@ import i18n from "../src/i18n";
 import { applyDirection } from "../src/i18n/direction";
 import { defaultHandlers } from "../src/mocks/handlers";
 // Same stylesheet order as src/main.tsx: theme.css overrides Bootstrap.
-import "bootstrap/dist/css/bootstrap.min.css";
+import "../src/bootstrap.css";
 import "../src/theme.css";
 import "../src/styles.css";
 

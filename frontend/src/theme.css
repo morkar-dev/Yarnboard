@@ -1,23 +1,30 @@
 /**
  * Yarnboard's Bootstrap theme: light backgrounds, eggplant purple accents,
- * softer corners everywhere. Must be imported AFTER bootstrap.min.css
- * (see main.tsx) so these rules win the cascade.
+ * softer corners everywhere.
  *
- * Two override strategies are used here, matching how Bootstrap 5.3's
- * compiled CSS actually resolves colors (verified against the shipped
- * bundle in node_modules -- Bootstrap's docs describe a CSS-variable
- * theming API, but the *precompiled* bootstrap.min.css doesn't wire every
- * component through the root variables):
- *   1. Root-level variables (--bs-primary, --bs-border-radius, --bs-body-bg,
- *      etc.) cascade automatically into every rule that already references
- *      them with var(...) -- this covers page background/text, links,
- *      border-radius everywhere, and the .bg-primary/.text-primary/
- *      .border-primary utility classes.
- *   2. Everything else -- buttons, focus rings, checked checkboxes --
- *      hardcodes literal hex colors per-component instead of referencing
- *      the root variables, so those need their own explicit overrides
- *      below (targeting the same local custom properties Bootstrap
- *      defines on each component, e.g. --bs-btn-bg on .btn-primary).
+ * Bootstrap itself lives in a CSS cascade layer, "bootstrap" (see
+ * bootstrap.css, and i18n/direction.ts for the Hebrew/RTL build), and this
+ * file doesn't. Unlayered rules always beat layered ones, whatever their
+ * specificity or load order -- which is what keeps the theme intact in
+ * Hebrew, where Bootstrap's RTL stylesheet is added at runtime, *after*
+ * this file. Before the layer, that late RTL file silently re-applied
+ * Bootstrap's own blue (buttons, links, focus rings) and default page
+ * background over everything below.
+ *
+ * One catch with layers: a layered `!important` beats an unlayered one, so
+ * Bootstrap's `!important` utilities (.text-muted, .text-danger, ...) can't
+ * be overridden directly. Those are re-colored through the variables they
+ * read instead (section 3), and the few that hard-code a color go in the
+ * early "yb-important" layer (section 4). Don't add `!important` elsewhere.
+ *
+ * Bootstrap 5.3's compiled CSS colors things two ways, and both need
+ * overriding (verified against the shipped bundle in node_modules):
+ *   1. Root-level variables (--bs-primary, --bs-link-color, --bs-body-bg,
+ *      --bs-focus-ring-color, ...) that rules read with var(...).
+ *   2. Hex colors hard-coded per component (buttons, form controls, the
+ *      dropdown's active item, ...), which need their own overrides below.
+ * To find any blue left over: grep bootstrap.min.css for #0d6efd,
+ * 13, 110, 253 and %2386b7fe (the focused switch knob is an SVG).
  */
 
 :root {
@@ -26,21 +33,32 @@
   --yb-eggplant-dark: #4a2b52;
   --yb-eggplant-dark-rgb: 74, 43, 82;
   --yb-eggplant-light: #9b6fa3;
+  --yb-eggplant-subtle: #f1e8f3;
   --yb-bg: #fbf8fc;
   --yb-surface: #ffffff;
   --yb-border: #e3d5e7;
   --yb-text: #2e1f33;
   --yb-text-muted: #7a6580;
+  /* Focus ring, the same strength as Bootstrap's own (25% opacity). */
+  --yb-focus-ring: rgba(var(--yb-eggplant-rgb), 0.25);
 
-  /* --- 1. Variables the compiled bundle already consumes via var(...) --- */
+  /* --- 1. Variables the compiled bundle reads via var(...) --- */
   --bs-primary: var(--yb-eggplant);
   --bs-primary-rgb: var(--yb-eggplant-rgb);
+  --bs-primary-text-emphasis: var(--yb-eggplant-dark);
+  --bs-primary-bg-subtle: var(--yb-eggplant-subtle);
+  --bs-primary-border-subtle: var(--yb-border);
   --bs-body-bg: var(--yb-bg);
   --bs-body-color: var(--yb-text);
   --bs-border-color: var(--yb-border);
   --bs-border-color-translucent: var(--yb-border);
+  /* Links read either the -rgb or the plain variable depending on the
+     component (.btn-link uses the plain one), so set both. */
+  --bs-link-color: var(--yb-eggplant);
   --bs-link-color-rgb: var(--yb-eggplant-rgb);
+  --bs-link-hover-color: var(--yb-eggplant-dark);
   --bs-link-hover-color-rgb: var(--yb-eggplant-dark-rgb);
+  --bs-focus-ring-color: var(--yb-focus-ring);
 
   /* Softer corners everywhere (Bootstrap defaults: sm .25rem, base .375rem,
      lg .5rem, xl 1rem, xxl 2rem) */
@@ -51,7 +69,21 @@
   --bs-border-radius-xxl: 1.5rem;
 }
 
-/* --- 2. Components that hardcode colors instead of referencing --bs-primary --- */
+/* The dark navbar (data-bs-theme="dark") gets Bootstrap's dark palette,
+   which redefines links and "primary" text as light blue. Light purple
+   tints instead: the eggplant itself is too dark to read on the navbar. */
+[data-bs-theme="dark"] {
+  --bs-link-color: #d7bfdc;
+  --bs-link-color-rgb: 215, 191, 220;
+  --bs-link-hover-color: #ecdcef;
+  --bs-link-hover-color-rgb: 236, 220, 239;
+  --bs-primary-text-emphasis: #d7bfdc;
+  --bs-primary-bg-subtle: var(--yb-eggplant-dark);
+  --bs-primary-border-subtle: var(--yb-eggplant);
+  --bs-focus-ring-color: rgba(215, 191, 220, 0.35);
+}
+
+/* --- 2. Components that hard-code Bootstrap's blue --- */
 
 .btn-primary {
   --bs-btn-bg: var(--yb-eggplant);
@@ -73,6 +105,13 @@
   --bs-btn-active-bg: var(--yb-eggplant);
   --bs-btn-active-border-color: var(--yb-eggplant);
   --bs-btn-disabled-color: var(--yb-eggplant);
+  --bs-btn-disabled-border-color: var(--yb-eggplant);
+  --bs-btn-focus-shadow-rgb: var(--yb-eggplant-rgb);
+}
+
+/* Link-style buttons ("Mark all read", ...): the plain --bs-link-color
+   above already recolors them; only the focus ring is hard-coded. */
+.btn-link {
   --bs-btn-focus-shadow-rgb: var(--yb-eggplant-rgb);
 }
 
@@ -86,10 +125,9 @@
   --bs-btn-disabled-color: #5c636a;
 }
 
-/* Same story for Bootstrap's #dc3545 red as text (outline buttons, the
-   .text-danger "Remove" links): 4.29:1 on --yb-bg. #b02a37 is
-   Bootstrap's own darker danger shade (6.17:1). Hover/active keep the
-   default red fill -- white on #dc3545 already passes (4.53:1). */
+/* Same story for Bootstrap's #dc3545 red as text: 4.29:1 on --yb-bg.
+   #b02a37 is Bootstrap's own darker danger shade (6.17:1). Hover/active
+   keep the default red fill -- white on #dc3545 already passes (4.53:1). */
 .btn-outline-danger {
   --bs-btn-color: #b02a37;
   --bs-btn-border-color: #b02a37;
@@ -97,24 +135,78 @@
   --bs-btn-disabled-border-color: #b02a37;
 }
 
-.text-danger {
-  color: #b02a37 !important;
+.btn-close {
+  --bs-btn-close-focus-shadow: 0 0 0 0.25rem var(--yb-focus-ring);
 }
 
 .form-control:focus,
 .form-select:focus {
   border-color: var(--yb-eggplant-light);
-  box-shadow: 0 0 0 0.25rem rgba(var(--yb-eggplant-rgb), 0.25);
+  box-shadow: 0 0 0 0.25rem var(--yb-focus-ring);
 }
 
-.form-check-input:checked {
+.form-check-input:checked,
+.form-check-input[type="checkbox"]:indeterminate {
   background-color: var(--yb-eggplant);
   border-color: var(--yb-eggplant);
 }
 
 .form-check-input:focus {
   border-color: var(--yb-eggplant-light);
-  box-shadow: 0 0 0 0.25rem rgba(var(--yb-eggplant-rgb), 0.25);
+  box-shadow: 0 0 0 0.25rem var(--yb-focus-ring);
+}
+
+/* A focused (not yet switched on) switch draws its knob as an SVG with a
+   hard-coded light blue fill; same shape, light eggplant instead. */
+.form-switch .form-check-input:focus {
+  --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%239b6fa3'/%3e%3c/svg%3e");
+}
+
+.form-range::-webkit-slider-thumb {
+  background-color: var(--yb-eggplant);
+}
+.form-range::-moz-range-thumb {
+  background-color: var(--yb-eggplant);
+}
+.form-range:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 1px var(--yb-bg), 0 0 0 0.25rem var(--yb-focus-ring);
+}
+.form-range:focus::-moz-range-thumb {
+  box-shadow: 0 0 0 1px var(--yb-bg), 0 0 0 0.25rem var(--yb-focus-ring);
+}
+
+.nav-link:focus-visible {
+  box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+/* The highlighted item while clicking a dropdown entry (the account menu,
+   the notification inbox). */
+.dropdown-menu {
+  --bs-dropdown-link-active-bg: var(--yb-eggplant);
+}
+
+/* Not used in the app today; themed anyway so one added later doesn't
+   come out blue. */
+.nav-pills {
+  --bs-nav-pills-link-active-bg: var(--yb-eggplant);
+}
+.list-group {
+  --bs-list-group-active-bg: var(--yb-eggplant);
+  --bs-list-group-active-border-color: var(--yb-eggplant);
+}
+.pagination {
+  --bs-pagination-active-bg: var(--yb-eggplant);
+  --bs-pagination-active-border-color: var(--yb-eggplant);
+  --bs-pagination-focus-box-shadow: 0 0 0 0.25rem var(--yb-focus-ring);
+}
+.progress,
+.progress-stacked {
+  --bs-progress-bar-bg: var(--yb-eggplant);
+}
+.accordion {
+  --bs-accordion-btn-focus-box-shadow: 0 0 0 0.25rem var(--yb-focus-ring);
+  --bs-accordion-active-color: var(--yb-eggplant-dark);
+  --bs-accordion-active-bg: var(--yb-eggplant-subtle);
 }
 
 /* Bootstrap's .btn-light normally resolves to a generic gray, and since
@@ -146,12 +238,14 @@
   background-color: var(--yb-eggplant-dark);
 }
 
+/* --- 3. !important utilities: re-colored through the variable they read --- */
+
 /* Bootstrap's default .text-muted / .text-body-secondary read as plain
    gray, which looks flat against the eggplant/lavender palette -- give
    secondary text a soft purple-gray tint instead. */
 .text-body-secondary,
 .text-muted {
-  color: var(--yb-text-muted) !important;
+  --bs-secondary-color: var(--yb-text-muted);
 }
 
 /* ...but that tint is for light surfaces only. Inside the dark navbar
@@ -159,5 +253,29 @@
    measured 2.93:1 -- use a light tint of the same hue there (8:1). */
 [data-bs-theme="dark"] .text-body-secondary,
 [data-bs-theme="dark"] .text-muted {
-  color: #c9b5ce !important;
+  --bs-secondary-color: #c9b5ce;
+}
+
+/* Bootstrap's #dc3545 red as text measures 4.29:1 on --yb-bg; its own
+   darker danger shade #b02a37 passes (6.17:1). */
+.text-danger {
+  --bs-danger-rgb: 176, 42, 55;
+}
+
+/* --- 4. Bootstrap rules that hard-code blue *with* !important --- */
+
+/* A layered !important beats any unlayered rule, so these can't be
+   overridden above. For !important the layer order flips -- the earliest
+   declared layer wins -- and "yb-important" is declared before
+   "bootstrap" (see bootstrap.css). Keep this block for exactly these
+   cases; plain overrides belong in the sections above. */
+@layer yb-important {
+  /* Card titles and the source-site link: hover/focus was Bootstrap's
+     #0a58ca blue. */
+  .link-primary:focus,
+  .link-primary:hover {
+    color: RGBA(var(--yb-eggplant-dark-rgb), var(--bs-link-opacity, 1)) !important;
+    -webkit-text-decoration-color: RGBA(var(--yb-eggplant-dark-rgb), var(--bs-link-underline-opacity, 1)) !important;
+    text-decoration-color: RGBA(var(--yb-eggplant-dark-rgb), var(--bs-link-underline-opacity, 1)) !important;
+  }
 }
