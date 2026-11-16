@@ -194,7 +194,7 @@ export default function PatternVisibilityPanel({ pattern, onPatternChange }: Pro
 
         {!pattern.is_public && (
           <div className="mt-3">
-            <h6>{t("visibility.sharedWithHeading")}</h6>
+            <h2 className="h6">{t("visibility.sharedWithHeading")}</h2>
             {shares.length === 0 ? (
               <p className="text-muted small mb-2">{t("visibility.noShares")}</p>
             ) : (

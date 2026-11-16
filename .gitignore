@@ -234,3 +234,14 @@ frontend/e2e-smoke/.state.json
 frontend/e2e-smoke/.env
 frontend/smoke-results/
 frontend/tsconfig.tsbuildinfo
+
+# Storybook (frontend/.storybook) build output, logs and visual-test results
+*storybook.log
+storybook-static
+frontend/visual-report/
+frontend/visual-new-baselines.txt
+
+# Parser regression tests (backend/tests/regression): written on failure /
+# by `record.py show --draft`, for comparing with case.json -- not inputs.
+backend/tests/regression/cases/*/actual*.json
+backend/tests/regression/cases/*/expect.draft.json

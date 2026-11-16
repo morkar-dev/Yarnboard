@@ -137,6 +137,11 @@ export default function SubmitPatternPage() {
     }
   }
 
+  // Decided by the file the user picked (name or type), only to adapt the
+  // form; the server checks the file's actual bytes either way.
+  const uploadIsPdf =
+    !!uploadFile && (uploadFile.type === "application/pdf" || /\.pdf$/i.test(uploadFile.name));
+
   async function handleUploadPreview(e: FormEvent) {
     e.preventDefault();
     if (!uploadFile) return;
@@ -147,7 +152,8 @@ export default function SubmitPatternPage() {
     setPendingShared(null);
     setUploadLoading(true);
     try {
-      goToReview({ result: await previewPatternFromUpload(url, uploadFile), originalUrl: url });
+      const link = url.trim();
+      goToReview({ result: await previewPatternFromUpload(link, uploadFile), originalUrl: link });
     } catch (err) {
       setUploadError(getErrorMessage(err, t("submit.genericUploadError")));
     } finally {
@@ -263,17 +269,6 @@ export default function SubmitPatternPage() {
             <div className="mb-2" style={{ maxWidth: "32rem" }}>
               <p className="text-muted">{t("submit.uploadIntro")}</p>
               <Form onSubmit={handleUploadPreview}>
-                <Form.Group className="mb-3" controlId="submit-upload-url">
-                  <Form.Label>{t("submit.urlLabel")}</Form.Label>
-                  <Form.Control
-                    type="url"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    placeholder={t("submit.urlPlaceholder")}
-                    required
-                  />
-                  <Form.Text>{t("submit.uploadUrlHint")}</Form.Text>
-                </Form.Group>
                 <Form.Group className="mb-3" controlId="submit-upload-file">
                   <Form.Label>{t("submit.uploadFileLabel")}</Form.Label>
                   <Form.Control
@@ -284,6 +279,20 @@ export default function SubmitPatternPage() {
                     }
                     required
                   />
+                </Form.Group>
+                {/* A saved web page needs its link (credit + duplicate
+                    check); a PDF often has no page at all, so for a PDF
+                    it's optional and the author comes from the file. */}
+                <Form.Group className="mb-3" controlId="submit-upload-url">
+                  <Form.Label>{uploadIsPdf ? t("submit.sourceUrlLabel") : t("submit.urlLabel")}</Form.Label>
+                  <Form.Control
+                    type="url"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    placeholder={t("submit.urlPlaceholder")}
+                    required={!uploadIsPdf}
+                  />
+                  <Form.Text>{uploadIsPdf ? t("submit.uploadPdfUrlHint") : t("submit.uploadUrlHint")}</Form.Text>
                 </Form.Group>
                 {uploadError && <Alert variant="danger">{uploadError}</Alert>}
                 <Button type="submit" variant="primary" disabled={uploadLoading || !uploadFile}>

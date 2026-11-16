@@ -1,0 +1,9 @@
+{
+  "description": "Example case (format reference): photos of a Hebrew pattern card. Offline runs parse the saved Gemini transcription (transcript.txt); REGRESSION_LIVE=1 re-reads the photos with Gemini. This example ships without photos, so its live test fails until you add some.",
+  "kind": "photos",
+  "expect": {
+    "title": "כובע גרב פשוט",
+    "materials": { "contains": "פקעת צמר" },
+    "instructions": { "present": true, "step_contains": { "הוראות": "88 עיניים" } }
+  }
+}

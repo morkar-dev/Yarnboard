@@ -375,10 +375,11 @@ def preview_pattern_from_upload():
     This is also the fallback for sites whose bot-detection (e.g.
     Cloudflare's JS challenge -- see scraper.ScraperError messages) blocks
     Yarnboard's automatic fetch entirely: the user opens the page in their
-    own browser, saves it, and uploads the saved HTML here. `url` is still
-    required and still used for dedup and attribution in both cases --
-    only the content used for extraction is user-supplied instead of
-    fetched by us.
+    own browser, saves it, and uploads the saved HTML here. `url` is
+    required for saved HTML and optional for a PDF (which often has no web
+    page at all); when given it's used for dedup and attribution, exactly
+    as in /preview -- only the content used for extraction is
+    user-supplied instead of fetched by us.
 
     Which parser runs is decided by sniffing the file's own bytes (a
     `%PDF-` magic header), not by filename extension or the browser-
@@ -395,7 +396,8 @@ def preview_pattern_from_upload():
       - in: formData
         name: url
         type: string
-        required: true
+        required: false
+        description: Required for saved HTML, optional for a PDF
       - in: formData
         name: html_file
         type: file
@@ -405,7 +407,7 @@ def preview_pattern_from_upload():
       200:
         description: Either {duplicate:true, existing_pattern_id} or {duplicate:false, draft}
       400:
-        description: url or html_file missing
+        description: html_file missing, url missing for saved HTML, or url not http(s)
       401:
         description: Not logged in
       502:
@@ -415,41 +417,48 @@ def preview_pattern_from_upload():
     if error:
         return error
 
-    url = (request.form.get("url") or "").strip()
-    if not url:
-        return jsonify({"error": "url is required", "code": "url_required"}), 400
-
     uploaded = request.files.get("html_file")
     if not uploaded or not uploaded.filename:
         return jsonify({"error": "html_file is required", "code": "file_required"}), 400
 
-    duplicate_response = _existing_pattern_response(url, user_id)
-    if duplicate_response:
-        return duplicate_response
-
     raw_bytes = uploaded.read()
+    is_pdf = raw_bytes.startswith(b"%PDF-")
+
+    # A saved web page needs the page's URL: that's where it came from,
+    # and the only way to credit it and catch duplicates. A PDF often has
+    # no page at all (a paid download, a file someone emailed), so its
+    # link is optional -- like pasted text, submit_pattern then stores it
+    # without one.
+    url, url_error = _optional_source_url(request.form.get("url"))
+    if url_error:
+        return url_error
+    if not url and not is_pdf:
+        return jsonify({
+            "error": "A saved web page needs the link it came from.",
+            "code": "url_required",
+        }), 400
+
+    if url:
+        duplicate_response = _existing_pattern_response(url, user_id)
+        if duplicate_response:
+            return duplicate_response
 
     try:
-        if raw_bytes.startswith(b"%PDF-"):
-            draft = parse_pattern_pdf(raw_bytes, url)
+        if is_pdf:
+            draft = parse_pattern_pdf(raw_bytes, url or None)
         else:
             html = raw_bytes.decode("utf-8", errors="replace")
             draft = parse_pattern_html(html, url)
     except ScraperError as exc:
         # See preview_pattern's identical case above.
-        current_app.logger.error("Parsing an uploaded file for %s failed: %s", url, exc)
+        current_app.logger.error("Parsing an uploaded file for %s failed: %s", url or "(no link)", exc)
         return jsonify({
             "error": "We couldn't read that file. Make sure it's the saved pattern page "
                      "(HTML) or its PDF, and try again.",
             "code": "file_parse_error",
         }), 502
 
-    return jsonify({
-        "duplicate": False,
-        "existing_pattern_id": None,
-        "already_shared_with_you": _shared_pattern_id(url, user_id),
-        "draft": draft,
-    }), 200
+    return _draft_response(draft, url, user_id)
 
 
 @patterns_bp.route("/submit", methods=["POST"])

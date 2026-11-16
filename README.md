@@ -194,6 +194,50 @@ in your own shell only, never commit it.
 Not run in CI, and deliberately doesn't check real email delivery -- see
 `frontend/e2e-dev/notifications.spec.ts`'s docstring for why.
 
+## Storybook: component, accessibility and visual tests
+
+Every component (and the pattern detail, submit and edit pages) has
+stories in `frontend/src/**/*.stories.tsx` -- each one a fixed UI state
+(guest vs logged in, empty, error, loading, Hebrew/RTL, phone width). They
+run against a fake API (MSW, `frontend/src/mocks/`), never the backend.
+
+```bash
+npm --prefix frontend run storybook        # browse them at localhost:6006
+npm --prefix frontend run test:stories     # interaction tests + axe a11y scan
+```
+
+`test:stories` renders every story in headless Chromium, runs its `play`
+function (clicks, typing, assertions), then fails on any accessibility
+violation. Play functions find buttons and labels by their translated text
+(`t("submit.modeText")` from `frontend/src/mocks/text.ts`), never by
+hard-coded English, because the visual tests run every story in Hebrew too
+and fail if a play function throws there. If a rule genuinely can't be fixed yet, switch it off on that
+one story with a comment rather than globally.
+
+Visual regression compares a screenshot of every story, in English and
+Hebrew, with the PNGs in `frontend/visual/__screenshots__/<os>/`:
+
+```bash
+npm --prefix frontend run build-storybook
+npm --prefix frontend run test:visual          # compare
+npm --prefix frontend run test:visual:update   # accept an intended change
+```
+
+Baselines are per OS because fonts render differently: `darwin/` is for
+local runs on a Mac, `linux/` is CI's. Locally, a story with no baseline
+yet gets one written and passes (with a "new baseline" note); add
+`-- --update-snapshots=none` for the strict mode, where a missing baseline
+fails. Review and commit new/changed PNGs like any other diff (the report
+lands in `frontend/visual-report/`).
+
+CI is strict about Linux baselines: if a `frontend-stories` run had to
+write any (a new story, or the very first run), the job fails and lists
+them in `visual-new-baselines.txt`. Download that job's artifacts, review
+the PNGs, and commit them under `frontend/visual/__screenshots__/linux/`;
+the next run compares against them. That's also how to accept an
+intended UI change on Linux: delete the affected PNGs and let CI write
+fresh ones.
+
 ## GitLab CI
 
 `.gitlab-ci.yml` runs the checks; results show on each merge request, in

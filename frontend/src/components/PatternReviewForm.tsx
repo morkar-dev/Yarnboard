@@ -147,7 +147,7 @@ export default function PatternReviewForm({ draft, onChange }: Props) {
         />
       </Form.Group>
 
-      <h5 className="mt-2 mb-0">{t("reviewForm.instructionsHeading")}</h5>
+      <h2 className="h5 mt-2 mb-0">{t("reviewForm.instructionsHeading")}</h2>
       <Form.Text className="text-muted mt-0">{t("reviewForm.instructionsHint")}</Form.Text>
       {Object.entries(draft.instructions).map(([part, steps], partIndex, allParts) => (
         <Card key={part} className="shadow-sm">
@@ -174,6 +174,7 @@ export default function PatternReviewForm({ draft, onChange }: Props) {
               <Form.Control
                 className="fw-semibold"
                 dir="auto"
+                aria-label={t("reviewForm.partNameAria", { number: partIndex + 1 })}
                 value={part}
                 onChange={(e) => updatePartName(part, e.target.value)}
               />

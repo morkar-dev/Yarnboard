@@ -18,6 +18,7 @@ import ipaddress
 import re
 import socket
 import time
+import zlib
 from urllib.parse import unquote, urljoin, urlparse
 
 import pdfplumber
@@ -217,7 +218,7 @@ def parse_pattern_html(html: str, source_url: str) -> dict:
     }
 
 
-def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
+def parse_pattern_pdf(pdf_bytes: bytes, source_url: str | None) -> dict:
     """
     Heuristically extract a pattern draft from a PDF file's raw bytes.
 
@@ -225,9 +226,12 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
     "never assume this is correct" caveat) -- called from the upload path
     (POST /api/patterns/preview-upload) when the uploaded file is a PDF
     rather than saved HTML, and from the CLI at the bottom of this file.
-    `source_url` is still whatever URL the user typed alongside the
-    upload (a PDF has no notion of "the page it came from" on its own),
-    used the same way for dedup/attribution as the HTML upload path.
+    `source_url` is whatever URL the user typed alongside the upload, or
+    None -- unlike saved HTML, a PDF often has no web page at all (a paid
+    download, a file someone emailed), so the link is optional. When
+    given, it's used the same way for dedup/attribution as the HTML path.
+
+    The author comes from the file itself -- see _pdf_author.
 
     PDFs have no tags, so the two HTML-specific signals _extract_sections
     relies on need PDF equivalents: "is this a heading/bold tag" becomes
@@ -240,8 +244,9 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
     """
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            metadata_title = (pdf.metadata or {}).get("Title")
-            metadata_author = (pdf.metadata or {}).get("Author")
+            metadata = pdf.metadata or {}
+            metadata_title = metadata.get("Title")
+            xmp_creators = _pdf_xmp_creators(pdf)
 
             lines: list[str] = []
             label_texts: set[str] = set()
@@ -270,13 +275,11 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
     else:
         title = "Untitled Pattern"
 
-    author = metadata_author.strip() if metadata_author and metadata_author.strip() else None
-    if not author:
-        author = _find_author_phrase("\n".join(lines))
+    author = _pdf_author(metadata, xmp_creators, lines)
 
     materials, abbreviations, instructions = _classify_lines(lines, label_texts, {title})
 
-    domain = _bare_domain(source_url)
+    domain = _bare_domain(source_url) if source_url else None
 
     return {
         "title": title,
@@ -290,6 +293,153 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
         # so both parsers return the same shape.
         "photo_url": None,
     }
+
+
+# Author/Creator values that name nobody: what an OS, an office suite or a
+# shared account fills in by default. Compared case-insensitively.
+PDF_PLACEHOLDER_AUTHORS = {
+    "user", "admin", "administrator", "owner", "unknown", "author", "anonymous",
+    "pc", "windows user", "microsoft office user", "microsoft account", "default",
+}
+# A PDF's "Creator" field is meant to be the program that made the
+# original document -- and in practice almost always is ("Microsoft Word",
+# "Canva", "Adobe InDesign 18.0"). Only a value that matches none of these
+# is treated as a person's name.
+#
+# Matched on word boundaries so a surname that merely contains a hint
+# isn't dropped (Rios/Antonios vs "ios", Scanlon vs "scan", Printz vs
+# "print", Wordsworth vs "word", Chromy vs "chrome"):
+#   - brand names need only a boundary in front, because real Creator
+#     strings glue them to more text ("Microsoft365", "pdfTeX-1.40.25",
+#     "PDFium") and no one's name starts with them;
+#   - short or everyday words must match as whole words.
+_PDF_SOFTWARE_BRANDS = (
+    "microsoft", "adobe", "acrobat", "indesign", "illustrator", "photoshop",
+    "powerpoint", "libreoffice", "openoffice", "pdf", "latex", "pdftex",
+    "ghostscript", "mozilla", "firefox", "chromium", "inkscape", "scribus",
+    "canva", "figma", "google", "scansnap", "wkhtmltopdf",
+)
+_PDF_SOFTWARE_WORDS = (
+    "word", "office", "excel", "docs", "pages", "keynote", "writer", "quartz",
+    "tex", "skia", "safari", "chrome", "print", "printer", "printed", "scan",
+    "scanner", "scanned", "ios", "ipados", "macos", "mac os", "os x", "windows",
+    "android", "wps", "affinity", "distiller", "version", "build",
+)
+PDF_SOFTWARE_HINTS = re.compile(
+    r"\b(?:" + "|".join(_PDF_SOFTWARE_BRANDS) + r")"
+    + r"|\b(?:" + "|".join(w.replace(" ", r"\s?") for w in _PDF_SOFTWARE_WORDS) + r")\b"
+    + r"|\bv?\d+(?:\.\d+)+",  # a version number: "18.2", "v1.40.25"
+    re.IGNORECASE,
+)
+
+
+def _pdf_author(metadata: dict, xmp_creators: list[str], lines: list[str]) -> str | None:
+    """
+    The pattern's writer, taken from the PDF itself, best source first:
+      1. the document's Author property,
+      2. its XMP metadata's creator (dc:creator -- where Canva, InDesign
+         and many export tools put the author's name),
+      3. a "by <Name>" / "מאת <name>" byline in the text,
+      4. the Creator property -- only when it isn't the name of a program
+         (see PDF_SOFTWARE_HINTS), which is what it usually holds.
+    Placeholder names ("User", "Microsoft Office User", ...) are skipped
+    at every step. None when nothing names a person: the review form
+    leaves the field blank rather than guessing.
+    """
+    for candidate in [metadata.get("Author"), *xmp_creators]:
+        name = _clean_pdf_name(candidate)
+        if name:
+            return name
+
+    byline = _find_author_phrase("\n".join(lines))
+    if byline:
+        return byline
+
+    creator = _clean_pdf_name(metadata.get("Creator"))
+    if creator and not PDF_SOFTWARE_HINTS.search(creator):
+        return creator
+    return None
+
+
+def _clean_pdf_name(value) -> str | None:
+    """A usable person's name from a PDF metadata value, or None."""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    if not isinstance(value, str):
+        return None
+    name = re.sub(r"\s+", " ", value).strip(" \t;,")
+    if not name or len(name) > 100 or "@" in name:
+        return None
+    if name.lower() in PDF_PLACEHOLDER_AUTHORS:
+        return None
+    return name
+
+
+# XMP packets are a few KB (Adobe pads them to ~2-4 KB; one with an
+# embedded thumbnail can reach tens of KB). Anything bigger isn't worth
+# reading for an author name -- and capping it, before decompressing or
+# parsing, keeps a crafted upload from tying up the request worker.
+XMP_MAX_BYTES = 256 * 1024
+
+
+def _pdf_xmp_creators(pdf) -> list[str]:
+    """The dc:creator entries of a PDF's XMP metadata, in order. Empty if
+    it has none, or if it can't be read safely -- a malformed or hostile
+    metadata stream must never fail (or stall) the whole upload.
+
+    The PDF is user-uploaded, so the stream is treated as hostile:
+      - its size is capped before anything is decoded, and it's
+        decompressed here with a hard output limit (pdfminer's get_data()
+        would inflate a compression bomb in full first);
+      - the XML is parsed with defusedxml with DTDs forbidden, so no
+        entity definition (billion laughs, external entities) is ever
+        expanded.
+    """
+    try:
+        from defusedxml import ElementTree
+        from pdfminer.pdftypes import PDFStream, resolve1
+
+        stream = resolve1(pdf.doc.catalog.get("Metadata"))
+        if not isinstance(stream, PDFStream):
+            return []
+        data = _bounded_stream_bytes(stream, XMP_MAX_BYTES)
+        if data is None:
+            return []
+        root = ElementTree.fromstring(data, forbid_dtd=True)
+        ns = {
+            "dc": "http://purl.org/dc/elements/1.1/",
+            "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+        }
+        return [
+            li.text.strip()
+            for creator in root.iter(f"{{{ns['dc']}}}creator")
+            for li in creator.iter(f"{{{ns['rdf']}}}li")
+            if li.text and li.text.strip()
+        ]
+    except Exception:
+        return []
+
+
+def _bounded_stream_bytes(stream, max_bytes: int) -> bytes | None:
+    """A PDF stream's decoded bytes, or None if it would exceed `max_bytes`
+    (compressed or decompressed) or uses an encoding other than none or
+    plain Flate (zlib) -- the only two an XMP packet uses in practice."""
+    raw = stream.get_rawdata()
+    if raw is None or len(raw) > max_bytes:
+        return None
+    filters = stream.get_filters()
+    if not filters:
+        return raw
+    if len(filters) != 1:
+        return None
+    name, params = filters[0]
+    if getattr(name, "name", name) not in ("FlateDecode", "Fl") or params:
+        return None  # params would mean a PNG/TIFF predictor: not XMP
+    inflater = zlib.decompressobj()
+    data = inflater.decompress(raw, max_bytes + 1)
+    if len(data) > max_bytes or inflater.unconsumed_tail:
+        return None
+    return data
 
 
 MANUAL_SOURCE_PREFIX = "manual:"

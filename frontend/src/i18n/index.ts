@@ -46,7 +46,7 @@ export function getStoredLanguage(): SupportedLanguage {
 /** Applies `dir`/`lang` to <html> for the given language -- the one
  * thing that has to happen outside React's render cycle (CSS direction
  * and the RTL Bootstrap stylesheet toggle both key off these attributes;
- * see main.tsx's applyDirection, called both at boot and on every
+ * see applyDirection in ./direction.ts, called both at boot and on every
  * language change). */
 export function isRtl(language: string): boolean {
   return RTL_LANGUAGES.includes(language as SupportedLanguage);

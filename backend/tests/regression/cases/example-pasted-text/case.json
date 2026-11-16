@@ -1,0 +1,35 @@
+{
+  "description": "Example case (format reference): pasted plain text with \"Section:\" headings. Shows exact lines and steps, plus not_parts for a section that must never appear.",
+  "kind": "text",
+  "expect": {
+    "title": "Simple Garter Scarf",
+    "author": "Example Designer",
+    "materials": {
+      "lines": [
+        "- 2 skeins of aran yarn",
+        "- 6mm needles"
+      ]
+    },
+    "abbreviations": {
+      "lines": [
+        "k = knit"
+      ]
+    },
+    "instructions": {
+      "parts": [
+        "Scarf"
+      ],
+      "not_parts": [
+        "Instructions"
+      ],
+      "steps": {
+        "Scarf": [
+          "Cast on 30 stitches.",
+          "Knit every row until the scarf is 150 cm long.",
+          "Bind off."
+        ]
+      }
+    },
+    "source_domain": null
+  }
+}
