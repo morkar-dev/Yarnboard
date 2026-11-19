@@ -241,6 +241,21 @@ the next run compares against them. That's also how to accept an
 intended UI change on Linux: delete the affected PNGs and let CI write
 fresh ones.
 
+## Newsletter
+
+Users opt in to product update emails in **Notification settings**; it's
+off by default (marketing email needs prior consent). An admin writes and
+sends a newsletter from the account menu's **Send newsletter** page
+(`/admin/newsletter`): plain text, a preview, a test send to yourself,
+then a send to every verified subscriber after an in-page confirmation of
+the subject and subscriber count. Each email has an unsubscribe link and
+a one-click `List-Unsubscribe` header that work without logging in
+(`/unsubscribe`, `POST /api/newsletter/unsubscribe`). Sends go through
+Resend's batch API with `RESEND_NEWSLETTER`; they aren't stored, only
+logged. Unsubscribe links are signed with `SECRET_KEY`, so rotating it
+invalidates links in emails already sent (people can still turn it off in
+settings).
+
 ## GitLab CI
 
 `.gitlab-ci.yml` runs the checks; results show on each merge request, in
@@ -314,8 +329,8 @@ frontend/backend services) -- Flask serves the built React app itself.
    `RESEND_NEWSLETTER`/`RESEND_FROM_EMAIL` (from
    [resend.com](https://resend.com) -- one API key per email category,
    see `app/email.py`; a category's emails are just logged instead of
-   sent if its key is left unset, and `RESEND_NEWSLETTER` isn't used by
-   any sender yet). Update
+   sent if its key is left unset; `RESEND_NEWSLETTER` sends the product
+   update newsletter, see below). Update
    `PUBLIC_APP_URL` to match this service's actual Render URL (used to
    build links in emails). Don't set `VITE_API_BASE_URL` -- leaving it
    unset is what makes the built frontend call the API with relative,

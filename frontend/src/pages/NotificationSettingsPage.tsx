@@ -7,7 +7,12 @@
 import { useEffect, useState } from "react";
 import { Alert, Card, Form, Spinner } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
-import { fetchNotificationSettings, updateNotificationSettings } from "../api/client";
+import {
+  fetchNewsletterSubscription,
+  fetchNotificationSettings,
+  updateNewsletterSubscription,
+  updateNotificationSettings,
+} from "../api/client";
 import { useApiErrorMessage } from "../i18n/useApiErrorMessage";
 import type { NotificationSettings, NotificationType } from "../types/models";
 
@@ -19,12 +24,28 @@ export default function NotificationSettingsPage() {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Product update emails: opt-in, off by default (see newsletter/routes.py).
+  const [newsletter, setNewsletter] = useState<boolean | null>(null);
 
   useEffect(() => {
     fetchNotificationSettings()
       .then(setSettings)
       .finally(() => setLoading(false));
+    fetchNewsletterSubscription()
+      .then((r) => setNewsletter(r.subscribed))
+      .catch(() => setNewsletter(null));
   }, []);
+
+  async function handleNewsletterToggle(value: boolean) {
+    setError(null);
+    setNewsletter(value);
+    try {
+      setNewsletter((await updateNewsletterSubscription(value)).subscribed);
+    } catch (err) {
+      setError(getErrorMessage(err, t("notificationSettings.saveFailed")));
+      setNewsletter(!value);
+    }
+  }
 
   async function handleToggle(type: NotificationType, channel: "email" | "in_app", value: boolean) {
     setError(null);
@@ -77,6 +98,23 @@ export default function NotificationSettingsPage() {
           ))}
         </Card.Body>
       </Card>
+      {newsletter !== null && (
+        <Card className="shadow-sm mt-3">
+          <Card.Body className="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+              <div className="fw-semibold">{t("notificationSettings.newsletter.label")}</div>
+              <div className="text-muted small">{t("notificationSettings.newsletter.description")}</div>
+            </div>
+            <Form.Check
+              type="switch"
+              id="newsletter-email"
+              label={t("notificationSettings.emailChannel")}
+              checked={newsletter}
+              onChange={(e) => handleNewsletterToggle(e.target.checked)}
+            />
+          </Card.Body>
+        </Card>
+      )}
     </div>
   );
 }
