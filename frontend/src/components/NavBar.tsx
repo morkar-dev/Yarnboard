@@ -2,6 +2,7 @@ import { Button, Container, Nav, Navbar, NavDropdown } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import NavSearch from "./NavSearch";
 import NotificationBell from "./NotificationBell";
 
 export default function NavBar() {
@@ -67,6 +68,7 @@ export default function NavBar() {
               </>
             )}
           </Nav>
+          <NavSearch />
           <Nav className="align-items-md-center gap-2">
             <Button variant="outline-light" size="sm" onClick={toggleLanguage}>
               {t("nav.language")}

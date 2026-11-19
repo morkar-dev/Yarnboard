@@ -1,0 +1,21 @@
+/*
+ * Bootstrap, inside a cascade layer named "bootstrap". The app's own
+ * stylesheets (theme.css, styles.css) are unlayered, so they always win
+ * over Bootstrap regardless of load order -- including over the RTL build
+ * that i18n/direction.ts adds at runtime for Hebrew, which joins this same
+ * layer (so it still overrides the LTR build, as it must). See theme.css's
+ * header for why this matters and its one catch (!important).
+ *
+ * Vite inlines this @import at build time, so production still gets one
+ * static CSS file (no extra request, no layout shift).
+ */
+/* Layer order, lowest priority first (unlayered CSS beats all of them):
+ *   yb-important -- for !important the order flips, so this one wins:
+ *                   theme.css uses it for the few Bootstrap rules that
+ *                   hard-code a color with !important.
+ *   yb-base      -- app rules that must keep losing to Bootstrap (see
+ *                   styles.css's plain input/textarea fallback).
+ *   bootstrap    -- Bootstrap, LTR and (for Hebrew) RTL.
+ */
+@layer yb-important, yb-base, bootstrap;
+@import "bootstrap/dist/css/bootstrap.min.css" layer(bootstrap);

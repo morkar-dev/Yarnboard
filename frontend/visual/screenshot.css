@@ -1,0 +1,16 @@
+/* Applied only while taking visual-regression screenshots (see
+   playwright.visual.config.ts). Bootstrap fades (alerts, dropdowns,
+   collapses) otherwise get captured at whatever opacity they happened to
+   reach, which made error-alert stories differ run to run. */
+*,
+*::before,
+*::after {
+  transition: none !important;
+  animation: none !important;
+}
+.fade:not(.show) {
+  opacity: 0 !important;
+}
+.fade.show {
+  opacity: 1 !important;
+}

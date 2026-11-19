@@ -29,15 +29,25 @@ Endpoints that matter most for correctness:
 """
 
 from flask import Blueprint, Response, current_app, request, jsonify
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import flag_modified
 
-from .. import photo, translation
+import uuid
+
+from .. import photo, transcription, translation
 from ..email import send_pattern_shared_email, send_pattern_updated_email
-from ..extensions import db
+from ..extensions import db, limiter
 from ..models import Pattern, PatternShare, User, UserPatternProgress
 from ..notifications import create_in_app_notification, is_enabled
-from ..scraper import parse_pattern_html, parse_pattern_pdf, scrape_pattern_from_url, ScraperError
+from ..scraper import (
+    MANUAL_SOURCE_PREFIX,
+    ScraperError,
+    parse_pattern_html,
+    parse_pattern_pdf,
+    parse_pattern_text,
+    scrape_pattern_from_url,
+)
 from ..utils import get_current_user_id
 
 patterns_bp = Blueprint("patterns", __name__, url_prefix="/api/patterns")
@@ -189,12 +199,16 @@ def preview_pattern():
     try:
         draft = scrape_pattern_from_url(url)
     except ScraperError as exc:
-        # No fixed translation key for this one -- the message itself is
-        # server-generated and varies per failure (bot-detection, timeout,
-        # unparseable page, etc.), not a fixed string a resource file could
-        # localize. The frontend shows it as-is regardless of UI language;
-        # "scraper_error" just tells it not to look up a translation key.
-        return jsonify({"error": str(exc), "code": "scraper_error"}), 502
+        # The exception text is for developers (it can name internal
+        # addresses, HTTP statuses, Playwright internals) -- log it, and
+        # give the user a fixed, friendly message instead. The frontend
+        # localizes it via errors.scraper_error.
+        current_app.logger.error("Scraping %s failed: %s", url, exc)
+        return jsonify({
+            "error": "We couldn't read that page automatically. Some sites block this - "
+                     "try saving the page (or its PDF) and uploading it instead.",
+            "code": "scraper_error",
+        }), 502
 
     return jsonify({
         "duplicate": False,
@@ -202,6 +216,152 @@ def preview_pattern():
         "already_shared_with_you": _shared_pattern_id(url, user_id),
         "draft": draft,
     }), 200
+
+
+MAX_PATTERN_TEXT_CHARS = 50_000
+
+
+def _optional_source_url(raw: str | None):
+    """(url, error_response) for the optional source link on text/photo
+    patterns -- blank is fine (a pattern from a book has none), anything
+    else must be an http(s) URL so the attribution link works."""
+    url = (raw or "").strip()
+    if url and not url.lower().startswith(("http://", "https://")):
+        return None, (jsonify({"error": "The source link must start with http:// or https://.", "code": "invalid_source_url"}), 400)
+    return url, None
+
+
+def _draft_response(draft: dict, url: str, user_id: int):
+    return jsonify({
+        "duplicate": False,
+        "existing_pattern_id": None,
+        "already_shared_with_you": _shared_pattern_id(url, user_id) if url else None,
+        "draft": draft,
+    }), 200
+
+
+@patterns_bp.route("/preview-text", methods=["POST"])
+def preview_pattern_from_text():
+    """
+    Turn pasted pattern text into a reviewable draft -- no DB write. Same
+    response shape as /preview. `url` (the original source) is optional.
+    ---
+    tags: [Patterns]
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required: [text]
+          properties:
+            text: {type: string}
+            url: {type: string}
+    responses:
+      200:
+        description: Either {duplicate:true, existing_pattern_id} or {duplicate:false, draft}
+      400:
+        description: No text, text too long, or a source link that isn't http(s)
+      401:
+        description: Not logged in
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "Paste the pattern's text first.", "code": "text_required"}), 400
+    if len(text) > MAX_PATTERN_TEXT_CHARS:
+        return jsonify({
+            "error": f"That's too much text (max {MAX_PATTERN_TEXT_CHARS:,} characters).",
+            "code": "text_too_long",
+            "max_chars": MAX_PATTERN_TEXT_CHARS,
+        }), 400
+    url, error = _optional_source_url(data.get("url"))
+    if error:
+        return error
+    if url:
+        duplicate_response = _existing_pattern_response(url, user_id)
+        if duplicate_response:
+            return duplicate_response
+
+    return _draft_response(parse_pattern_text(text, url or None), url, user_id)
+
+
+@patterns_bp.route("/preview-photos", methods=["POST"])
+@limiter.limit("20 per hour")
+def preview_pattern_from_photos():
+    """
+    Read a pattern out of up to 5 photos (multipart `photos`, in page
+    order) with Gemini and return a reviewable draft -- no DB write. Same
+    response shape as /preview. `url` (the original source) is optional.
+    Rate-limited per IP since every call is a paid Gemini request.
+    ---
+    tags: [Patterns]
+    consumes: [multipart/form-data]
+    parameters:
+      - in: formData
+        name: photos
+        type: file
+        required: true
+      - in: formData
+        name: url
+        type: string
+    responses:
+      200:
+        description: Either {duplicate:true, existing_pattern_id} or {duplicate:false, draft}
+      400:
+        description: No photos, too many, or a file that isn't an image
+      401:
+        description: Not logged in
+      422:
+        description: No readable pattern text in the photos
+      502:
+        description: The photos couldn't be read (Gemini unavailable)
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    files = [f for f in request.files.getlist("photos") if f and f.filename]
+    if not files:
+        return jsonify({"error": "Add at least one photo of the pattern.", "code": "photos_required"}), 400
+    if len(files) > transcription.MAX_PHOTOS:
+        return jsonify({
+            "error": f"Up to {transcription.MAX_PHOTOS} photos at a time.",
+            "code": "too_many_photos",
+            "max_photos": transcription.MAX_PHOTOS,
+        }), 400
+    url, error = _optional_source_url(request.form.get("url"))
+    if error:
+        return error
+    if url:
+        duplicate_response = _existing_pattern_response(url, user_id)
+        if duplicate_response:
+            return duplicate_response
+
+    try:
+        images = [photo.process_upload(f.read()) for f in files]
+    except photo.PhotoError:
+        return jsonify({"error": "One of those files isn't a photo we can read.", "code": "invalid_photo"}), 400
+
+    try:
+        text = transcription.transcribe_pattern_photos(images)
+    except translation.TranslationError as exc:
+        current_app.logger.error("Reading pattern photos failed: %s", exc)
+        return jsonify({
+            "error": "We couldn't read those photos right now. Please try again in a moment.",
+            "code": "photo_read_error",
+        }), 502
+    if not text:
+        return jsonify({
+            "error": "We couldn't find pattern text in those photos.",
+            "code": "photo_no_text",
+        }), 422
+
+    return _draft_response(parse_pattern_text(text, url or None), url, user_id)
 
 
 @patterns_bp.route("/preview-upload", methods=["POST"])
@@ -215,10 +375,11 @@ def preview_pattern_from_upload():
     This is also the fallback for sites whose bot-detection (e.g.
     Cloudflare's JS challenge -- see scraper.ScraperError messages) blocks
     Yarnboard's automatic fetch entirely: the user opens the page in their
-    own browser, saves it, and uploads the saved HTML here. `url` is still
-    required and still used for dedup and attribution in both cases --
-    only the content used for extraction is user-supplied instead of
-    fetched by us.
+    own browser, saves it, and uploads the saved HTML here. `url` is
+    required for saved HTML and optional for a PDF (which often has no web
+    page at all); when given it's used for dedup and attribution, exactly
+    as in /preview -- only the content used for extraction is
+    user-supplied instead of fetched by us.
 
     Which parser runs is decided by sniffing the file's own bytes (a
     `%PDF-` magic header), not by filename extension or the browser-
@@ -235,7 +396,8 @@ def preview_pattern_from_upload():
       - in: formData
         name: url
         type: string
-        required: true
+        required: false
+        description: Required for saved HTML, optional for a PDF
       - in: formData
         name: html_file
         type: file
@@ -245,7 +407,7 @@ def preview_pattern_from_upload():
       200:
         description: Either {duplicate:true, existing_pattern_id} or {duplicate:false, draft}
       400:
-        description: url or html_file missing
+        description: html_file missing, url missing for saved HTML, or url not http(s)
       401:
         description: Not logged in
       502:
@@ -255,38 +417,48 @@ def preview_pattern_from_upload():
     if error:
         return error
 
-    url = (request.form.get("url") or "").strip()
-    if not url:
-        return jsonify({"error": "url is required", "code": "url_required"}), 400
-
     uploaded = request.files.get("html_file")
     if not uploaded or not uploaded.filename:
         return jsonify({"error": "html_file is required", "code": "file_required"}), 400
 
-    duplicate_response = _existing_pattern_response(url, user_id)
-    if duplicate_response:
-        return duplicate_response
-
     raw_bytes = uploaded.read()
+    is_pdf = raw_bytes.startswith(b"%PDF-")
+
+    # A saved web page needs the page's URL: that's where it came from,
+    # and the only way to credit it and catch duplicates. A PDF often has
+    # no page at all (a paid download, a file someone emailed), so its
+    # link is optional -- like pasted text, submit_pattern then stores it
+    # without one.
+    url, url_error = _optional_source_url(request.form.get("url"))
+    if url_error:
+        return url_error
+    if not url and not is_pdf:
+        return jsonify({
+            "error": "A saved web page needs the link it came from.",
+            "code": "url_required",
+        }), 400
+
+    if url:
+        duplicate_response = _existing_pattern_response(url, user_id)
+        if duplicate_response:
+            return duplicate_response
 
     try:
-        if raw_bytes.startswith(b"%PDF-"):
-            draft = parse_pattern_pdf(raw_bytes, url)
+        if is_pdf:
+            draft = parse_pattern_pdf(raw_bytes, url or None)
         else:
             html = raw_bytes.decode("utf-8", errors="replace")
             draft = parse_pattern_html(html, url)
     except ScraperError as exc:
-        # See preview_pattern's identical case above for why this is a
-        # raw message + a generic "don't translate this" code, not a
-        # fixed translation key.
-        return jsonify({"error": str(exc), "code": "scraper_error"}), 502
+        # See preview_pattern's identical case above.
+        current_app.logger.error("Parsing an uploaded file for %s failed: %s", url or "(no link)", exc)
+        return jsonify({
+            "error": "We couldn't read that file. Make sure it's the saved pattern page "
+                     "(HTML) or its PDF, and try again.",
+            "code": "file_parse_error",
+        }), 502
 
-    return jsonify({
-        "duplicate": False,
-        "existing_pattern_id": None,
-        "already_shared_with_you": _shared_pattern_id(url, user_id),
-        "draft": draft,
-    }), 200
+    return _draft_response(draft, url, user_id)
 
 
 @patterns_bp.route("/submit", methods=["POST"])
@@ -306,7 +478,7 @@ def submit_pattern():
         required: true
         schema:
           type: object
-          required: [original_url, title]
+          required: [title]
           properties:
             original_url: {type: string}
             title: {type: string}
@@ -319,7 +491,7 @@ def submit_pattern():
       201:
         description: Pattern saved (private)
       400:
-        description: original_url or title missing
+        description: title missing, or original_url not http(s)
       401:
         description: Not logged in
       409:
@@ -330,15 +502,28 @@ def submit_pattern():
         return error
 
     data = request.get_json(silent=True) or {}
-    original_url = (data.get("original_url") or "").strip()
+    # Same rule as the preview routes: blank or http(s) only. This is the
+    # route that stores the value, and the pattern page renders it as a
+    # link -- a javascript: URL would run in the viewer's browser, and a
+    # "manual:" value would pass for our own no-source placeholder.
+    original_url, url_error = _optional_source_url(data.get("original_url"))
+    if url_error:
+        return url_error
     title = (data.get("title") or "").strip()
-    if not original_url or not title:
+    if not title:
         return jsonify({
-            "error": "original_url and title are required",
+            "error": "title is required",
             "code": "missing_fields",
         }), 400
+    # A pattern pasted as text or read from photos may have no source link
+    # (a book, a handwritten card). original_url is still the dedup key and
+    # NOT NULL, so give it a unique placeholder; to_dict reports
+    # has_source_link=False and the UI hides the "on <site>" link.
+    is_manual = not original_url
+    if is_manual:
+        original_url = f"{MANUAL_SOURCE_PREFIX}{uuid.uuid4()}"
 
-    if Pattern.find_duplicate(original_url, user_id):
+    if not is_manual and Pattern.find_duplicate(original_url, user_id):
         return jsonify({
             "error": "A pattern from this URL already exists.",
             "code": "pattern_already_exists",
@@ -348,8 +533,8 @@ def submit_pattern():
         original_url=original_url,
         title=title,
         author=(data.get("author") or None),
-        source_site_name=data.get("source_site_name") or Pattern.derive_source_domain(original_url),
-        source_domain=data.get("source_domain") or Pattern.derive_source_domain(original_url),
+        source_site_name=None if is_manual else (data.get("source_site_name") or Pattern.derive_source_domain(original_url)),
+        source_domain=None if is_manual else (data.get("source_domain") or Pattern.derive_source_domain(original_url)),
         materials=data.get("materials"),
         abbreviations=data.get("abbreviations"),
         instructions=data.get("instructions") or {},
@@ -905,7 +1090,13 @@ def translate_pattern(pattern_id):
             )
         )
     except translation.TranslationError as exc:
-        return jsonify({"error": str(exc), "code": "translation_error"}), 502
+        # Details go to the server log, not the client: the message can
+        # carry upstream (Gemini) error text.
+        current_app.logger.error("Translating pattern %s failed: %s", pattern.id, exc)
+        return jsonify({
+            "error": "We couldn't translate this pattern right now. Please try again in a moment.",
+            "code": "translation_error",
+        }), 502
 
     pattern.title_he = title_he
     pattern.materials_he = materials_he
@@ -971,7 +1162,13 @@ def translate_pattern_to_english(pattern_id):
             )
         )
     except translation.TranslationError as exc:
-        return jsonify({"error": str(exc), "code": "translation_error"}), 502
+        # Details go to the server log, not the client: the message can
+        # carry upstream (Gemini) error text.
+        current_app.logger.error("Translating pattern %s failed: %s", pattern.id, exc)
+        return jsonify({
+            "error": "We couldn't translate this pattern right now. Please try again in a moment.",
+            "code": "translation_error",
+        }), 502
 
     pattern.title_en = title_en
     pattern.materials_en = materials_en
@@ -1372,17 +1569,36 @@ def community_patterns():
     progress up for. Private and shared-but-not-public patterns never
     appear here regardless of viewer -- that's what /mine and
     /shared-with-me are for.
+
+    `q` (optional) narrows the list to patterns whose title (in any
+    language) or author contains it, case-insensitively -- the navbar's
+    search box.
     ---
     tags: [Patterns]
+    parameters:
+      - in: query
+        name: q
+        type: string
+        required: false
     responses:
       200:
-        description: All public patterns, newest first
+        description: Public patterns (optionally matching q), newest first
     """
     user_id = get_current_user_id()
 
-    patterns = (
-        Pattern.query.filter_by(is_public=True).order_by(Pattern.created_at.desc()).all()
-    )
+    query = Pattern.query.filter_by(is_public=True)
+    search = (request.args.get("q") or "").strip()
+    if search:
+        # Escape LIKE wildcards so a search for "100%" means the text.
+        escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{escaped}%"
+        query = query.filter(or_(
+            Pattern.title.ilike(like, escape="\\"),
+            Pattern.title_he.ilike(like, escape="\\"),
+            Pattern.title_en.ilike(like, escape="\\"),
+            Pattern.author.ilike(like, escape="\\"),
+        ))
+    patterns = query.order_by(Pattern.created_at.desc()).all()
     return jsonify([p.to_dict(current_user_id=user_id) for p in patterns]), 200
 
 
@@ -1544,3 +1760,42 @@ def toggle_progress(pattern_id):
     db.session.commit()
 
     return jsonify({"completed_steps": progress.completed_steps}), 200
+
+
+@patterns_bp.route("/<int:pattern_id>/progress", methods=["DELETE"])
+def clear_progress(pattern_id):
+    """
+    Uncheck every checklist step on this pattern for the current user only.
+    ---
+    tags: [Patterns]
+    parameters:
+      - in: path
+        name: pattern_id
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Progress cleared
+      401:
+        description: Not logged in
+      404:
+        description: No such pattern, or not visible to this user
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    user = User.query.get(user_id)
+    pattern = Pattern.query.get_or_404(pattern_id)
+    if not _can_view(user, pattern):
+        return jsonify({"error": "Pattern not found.", "code": "pattern_not_found"}), 404
+
+    progress = UserPatternProgress.query.filter_by(
+        user_id=user_id, pattern_id=pattern_id
+    ).first()
+    if progress is not None:
+        progress.completed_steps = {}
+        progress.pattern_version = pattern.instructions_version
+        db.session.commit()
+
+    return jsonify({"completed_steps": {}}), 200

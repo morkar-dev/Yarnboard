@@ -102,3 +102,65 @@ describe("PatternChecklist", () => {
     expect(header).toHaveAttribute("aria-expanded", "true");
   });
 });
+
+describe("PatternChecklist step conventions", () => {
+  const formatted: InstructionsMap = {
+    Body: [
+      { step: "## Ribbing", completed: false },
+      { step: "> Use a smaller needle here", completed: false },
+      { step: "Rows 1-3: k1, p1", completed: true },
+    ],
+  };
+
+  it("renders headings and notes without checkboxes, keeping step indexes", async () => {
+    const toggleSpy = vi.spyOn(api, "toggleProgress").mockResolvedValue({ completed_steps: {} });
+    render(<PatternChecklist patternId={7} instructions={formatted} />);
+
+    expect(screen.getByRole("heading", { name: "Ribbing" })).toBeInTheDocument();
+    expect(screen.getByText("Use a smaller needle here")).toBeInTheDocument();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+
+    fireEvent.click(screen.getByLabelText("Rows 1-3: k1, p1"));
+    await waitFor(() => expect(toggleSpy).toHaveBeenCalledWith(7, "Body", 2, false));
+  });
+
+  it("counts repeated rows up to the range's length", () => {
+    render(<PatternChecklist patternId={7} instructions={formatted} />);
+    const plus = screen.getByRole("button", { name: /one row done/i });
+
+    fireEvent.click(plus);
+    expect(screen.getByText(/1 \/ 3 rows \(next: row 2\)/)).toBeInTheDocument();
+    fireEvent.click(plus);
+    fireEvent.click(plus);
+    expect(screen.getByText(/all 3 rows done/i)).toBeInTheDocument();
+    expect(plus).toBeDisabled();
+  });
+
+  it("clears every check and counter after confirming", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const clearSpy = vi.spyOn(api, "clearProgress").mockResolvedValue({ completed_steps: {} });
+    render(<PatternChecklist patternId={7} instructions={formatted} />);
+    fireEvent.click(screen.getByRole("button", { name: /one row done/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: /clear all checks/i }));
+
+    expect(screen.getByLabelText("Rows 1-3: k1, p1")).not.toBeChecked();
+    expect(screen.getByText(/0 \/ 3 rows/)).toBeInTheDocument();
+    await waitFor(() => expect(clearSpy).toHaveBeenCalledWith(7));
+  });
+
+  it("puts the row counters back too when clearing fails", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(api, "clearProgress").mockRejectedValue(new Error("network"));
+    render(<PatternChecklist patternId={7} instructions={formatted} />);
+    fireEvent.click(screen.getByRole("button", { name: /one row done/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: /clear all checks/i }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByText(/1 \/ 3 rows/)).toBeInTheDocument();
+    // Saved for the next visit as well, not only on screen.
+    render(<PatternChecklist patternId={7} instructions={formatted} />);
+    expect(screen.getAllByText(/1 \/ 3 rows/)).toHaveLength(2);
+  });
+});

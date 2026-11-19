@@ -11,6 +11,13 @@
  * comes back 401. Proxied, the Set-Cookie arrives on yarnboard.net's own
  * response and is a plain first-party cookie.
  *
+ * The backend rate-limits per client IP, but every proxied request reaches
+ * Render from a Cloudflare address -- so the visitor's real IP
+ * (CF-Connecting-IP, set by Cloudflare and not forgeable by the client)
+ * goes along as X-Yarnboard-Client-IP, together with PROXY_SHARED_SECRET
+ * (a `wrangler secret`) proving the header came from this Worker. See
+ * client_ip() in backend/app/extensions.py.
+ *
  * Proxying also fixes the 405s: without this Worker, a relative
  * POST /api/... against the Cloudflare domain hit the static-asset
  * handler, which only answers GET/HEAD.
@@ -35,6 +42,14 @@ export default {
     // doesn't reject the request just because the proxy's origin isn't in
     // CORS_ORIGINS.
     headers.delete("Origin");
+    // Never pass through a client-supplied copy of our own headers.
+    headers.delete("X-Yarnboard-Client-IP");
+    headers.delete("X-Yarnboard-Proxy-Secret");
+    const clientIp = request.headers.get("CF-Connecting-IP");
+    if (clientIp && env.PROXY_SHARED_SECRET) {
+      headers.set("X-Yarnboard-Client-IP", clientIp);
+      headers.set("X-Yarnboard-Proxy-Secret", env.PROXY_SHARED_SECRET);
+    }
 
     return fetch(upstream, {
       method: request.method,

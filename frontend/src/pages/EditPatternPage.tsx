@@ -353,6 +353,7 @@ export default function EditPatternPage() {
                     <Form.Control
                       className="fw-semibold"
                       dir="rtl"
+                      aria-label={t("editPattern.translationPartHeadingAria", { part })}
                       value={heDraft.instructions_he[part]?.heading_he ?? ""}
                       onChange={(e) => updateHeHeading(part, e.target.value)}
                     />
@@ -365,6 +366,7 @@ export default function EditPatternPage() {
                       <Form.Control
                         dir="rtl"
                         style={{ flex: 1 }}
+                        aria-label={t("editPattern.translationStepAria", { number: index + 1, part })}
                         value={heDraft.instructions_he[part]?.steps_he?.[index] ?? ""}
                         onChange={(e) => updateHeStep(part, index, e.target.value)}
                       />
@@ -422,6 +424,7 @@ export default function EditPatternPage() {
                     <Form.Control
                       className="fw-semibold"
                       dir="auto"
+                      aria-label={t("editPattern.translationPartHeadingAria", { part })}
                       value={enDraft.instructions_en[part]?.heading_en ?? ""}
                       onChange={(e) => updateEnHeading(part, e.target.value)}
                     />
@@ -434,6 +437,7 @@ export default function EditPatternPage() {
                       <Form.Control
                         dir="auto"
                         style={{ flex: 1 }}
+                        aria-label={t("editPattern.translationStepAria", { number: index + 1, part })}
                         value={enDraft.instructions_en[part]?.steps_en?.[index] ?? ""}
                         onChange={(e) => updateEnStep(part, index, e.target.value)}
                       />

@@ -6,6 +6,7 @@ import type { Pattern } from "../types/models";
 const basePattern: Pattern = {
   id: 1,
   original_url: "https://example.com/my-pattern",
+  has_source_link: true,
   title: "Cozy Beanie",
   author: "Jane Designer",
   source_site_name: "Wooly Blog",
@@ -47,6 +48,33 @@ describe("AttributionTag", () => {
     );
 
     expect(screen.getByRole("link", { name: "the original site" })).toBeInTheDocument();
+  });
+
+  it("never renders a non-http source as a link", () => {
+    render(
+      <AttributionTag pattern={{ ...basePattern, original_url: "javascript:alert(1)" }} />,
+    );
+
+    expect(screen.getByText("Wooly Blog")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("has no source link for a pattern added from text or photos", () => {
+    render(
+      <AttributionTag
+        pattern={{ ...basePattern, has_source_link: false, original_url: "manual:1234" }}
+      />,
+    );
+
+    expect(screen.getByText("Jane Designer")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("drops the author line entirely when there's neither a link nor an author", () => {
+    render(<AttributionTag pattern={{ ...basePattern, has_source_link: false, author: null }} />);
+
+    expect(screen.queryByText("Unknown")).toBeNull();
+    expect(screen.getByText("knitter123")).toBeInTheDocument();
   });
 
   it("shows Unknown when there's no author on record", () => {

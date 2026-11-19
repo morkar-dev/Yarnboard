@@ -136,7 +136,10 @@ def test_translate_surfaces_translation_error_as_502(client, monkeypatch):
 
     resp = client.post(f"/api/patterns/{pattern['id']}/translate")
     assert resp.status_code == 502
-    assert "GEMINI_API_KEY" in resp.get_json()["error"]
+    body = resp.get_json()
+    assert body["code"] == "translation_error"
+    # Upstream error text stays in the server log, never in the response.
+    assert "GEMINI_API_KEY" not in body["error"]
 
 
 def test_edit_with_matching_instructions_he_marks_reviewed(client):
@@ -399,3 +402,147 @@ def test_translation_does_not_retry_a_client_error(monkeypatch):
         translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
 
     assert calls["count"] == 1  # no retries for a 4xx
+
+
+class _FakeClock:
+    """Stands in for translation._monotonic; fake_post advances it to
+    simulate how long each Gemini attempt took."""
+
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_gemini_attempts_stay_inside_the_total_time_budget(monkeypatch):
+    """A Gemini that times out every attempt must not keep the request
+    past gunicorn's 90 s worker timeout -- each attempt's timeout is cut
+    to what's left, and no attempt starts too close to the deadline."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(translation, "RETRY_BACKOFF_SECONDS", 0)
+    clock = _FakeClock()
+    monkeypatch.setattr(translation, "_monotonic", clock)
+    start = clock.now
+    timeouts = []
+
+    def fake_post(url, params, json, timeout):
+        timeouts.append(timeout)
+        clock.now += timeout  # the whole timeout passes, then it fails
+        raise translation.requests.exceptions.ReadTimeout("Read timed out.")
+
+    monkeypatch.setattr(translation.requests, "post", fake_post)
+
+    with pytest.raises(translation.TranslationError):
+        translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
+
+    # The main model's shorter attempt, then the fallback gets the rest --
+    # not 4 x 60 s.
+    assert timeouts == [
+        translation.PRIMARY_ATTEMPT_SECONDS,
+        translation.TOTAL_BUDGET_SECONDS - translation.PRIMARY_ATTEMPT_SECONDS,
+    ]
+    assert clock.now - start <= translation.TOTAL_BUDGET_SECONDS
+
+
+def test_gemini_does_not_start_an_attempt_with_too_little_time_left(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(translation, "RETRY_BACKOFF_SECONDS", 0)
+    clock = _FakeClock()
+    monkeypatch.setattr(translation, "_monotonic", clock)
+    calls = {"count": 0}
+
+    def fake_post(url, params, json, timeout):
+        calls["count"] += 1
+        # A slow 503: uses up all but a few seconds of the budget.
+        clock.now += translation.TOTAL_BUDGET_SECONDS - translation.MIN_ATTEMPT_SECONDS + 1
+        raise _fake_response_error(503)
+
+    monkeypatch.setattr(translation.requests, "post", fake_post)
+
+    with pytest.raises(translation.TranslationError):
+        translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
+
+    assert calls["count"] == 1
+
+
+def _model_of(url):
+    """The model name in a generateContent URL."""
+    return url.split("/models/")[1].split(":")[0]
+
+
+@pytest.fixture()
+def default_models(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("GEMINI_FALLBACK_MODEL", raising=False)
+    monkeypatch.setattr(translation, "RETRY_BACKOFF_SECONDS", 0)
+
+
+@pytest.mark.parametrize("failure", ["503", "429", "timeout"])
+def test_busy_main_model_falls_back_to_the_lighter_model(monkeypatch, default_models, failure):
+    models = []
+
+    def fake_post(url, params, json, timeout):
+        models.append(_model_of(url))
+        if len(models) == 1:
+            if failure == "timeout":
+                raise translation.requests.exceptions.ReadTimeout("Read timed out.")
+            raise _fake_response_error(int(failure))
+        return _FakeGeminiResponse(_gemini_payload(INSTRUCTIONS))
+
+    monkeypatch.setattr(translation.requests, "post", fake_post)
+
+    title_he, *_ = translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
+
+    assert title_he == "HE:title"
+    assert models == [translation.GEMINI_MODEL, translation.GEMINI_FALLBACK_MODEL]
+
+
+def test_bad_request_does_not_fall_back(monkeypatch, default_models):
+    models = []
+
+    def fake_post(url, params, json, timeout):
+        models.append(_model_of(url))
+        raise _fake_response_error(400)
+
+    monkeypatch.setattr(translation.requests, "post", fake_post)
+
+    with pytest.raises(translation.TranslationError):
+        translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
+
+    assert models == [translation.GEMINI_MODEL]
+
+
+def test_fallback_keeps_retrying_on_itself(monkeypatch, default_models):
+    models = []
+
+    def fake_post(url, params, json, timeout):
+        models.append(_model_of(url))
+        if len(models) < 3:
+            raise _fake_response_error(503)
+        return _FakeGeminiResponse(_gemini_payload(INSTRUCTIONS))
+
+    monkeypatch.setattr(translation.requests, "post", fake_post)
+
+    translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
+
+    assert models == [translation.GEMINI_MODEL, translation.GEMINI_FALLBACK_MODEL, translation.GEMINI_FALLBACK_MODEL]
+
+
+def test_models_can_be_set_by_environment(monkeypatch, default_models):
+    monkeypatch.setenv("GEMINI_MODEL", "main-from-env")
+    monkeypatch.setenv("GEMINI_FALLBACK_MODEL", "fallback-from-env")
+    models = []
+
+    def fake_post(url, params, json, timeout):
+        models.append(_model_of(url))
+        if len(models) == 1:
+            raise _fake_response_error(503)
+        return _FakeGeminiResponse(_gemini_payload(INSTRUCTIONS))
+
+    monkeypatch.setattr(translation.requests, "post", fake_post)
+
+    translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
+
+    assert models == ["main-from-env", "fallback-from-env"]

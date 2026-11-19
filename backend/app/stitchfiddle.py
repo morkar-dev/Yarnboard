@@ -32,9 +32,12 @@ scope; see this module's callers for the product decision).
 """
 
 import base64
+import logging
 import re
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
+
+logger = logging.getLogger(__name__)
 
 USER_AGENT = (
     "Mozilla/5.0 (compatible; YarnboardBot/1.0; "
@@ -94,7 +97,10 @@ def fetch_chart(share_url: str) -> dict:
                 "Timed out waiting for Stitch Fiddle to load this chart."
             ) from exc
         except Exception as exc:
-            raise StitchFiddleError(f"Could not load {share_url}: {exc}") from exc
+            # The raw exception is logged, not shown: StitchFiddleError
+            # messages go straight to the user.
+            logger.warning("Loading Stitch Fiddle chart %s failed: %s", share_url, exc)
+            raise StitchFiddleError("Could not load this chart from Stitch Fiddle.") from exc
         finally:
             browser.close()
 

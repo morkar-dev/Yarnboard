@@ -1,3 +1,4 @@
+import { request } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,4 +55,51 @@ export function readVerifyToken(email: string): string | null {
     },
   ).trim();
   return output || null;
+}
+
+/**
+ * Shells out to `flask --app wsgi e2e-expire-verify-token <email>` (see
+ * backend/app/__init__.py) to backdate a pending verification token past
+ * its 24-hour lifetime, so the expired-link path can be tested directly.
+ */
+export function expireVerifyToken(email: string): void {
+  execFileSync(FLASK_BIN, ["--app", "wsgi", "e2e-expire-verify-token", email], {
+    cwd: BACKEND_DIR,
+    env: { ...process.env, DATABASE_URL: "sqlite:///e2e.db", FLASK_ENV: "development" },
+  });
+}
+
+/** API origin the e2e backend runs on (see Makefile's `e2e` target). */
+export const API_BASE_URL = "http://localhost:5001";
+
+/**
+ * Creates a fresh pattern owned by `user` through the real submit API
+ * (optionally publishing it), so a spec can mutate or delete it without
+ * touching seed fixtures other specs depend on. Returns its id.
+ */
+export async function createPattern(
+  user: keyof typeof USERS,
+  fields: { title: string; original_url: string; instructions?: Record<string, string[]>; materials?: string },
+  options: { publish?: boolean } = {},
+): Promise<number> {
+  const context = await request.newContext({ baseURL: API_BASE_URL, storageState: `e2e/.auth/${user}.json` });
+  try {
+    const created = await context.post("/api/patterns/submit", {
+      data: {
+        materials: "Test materials",
+        abbreviations: "",
+        instructions: { "Part 1": ["Cast on 20 stitches.", "Knit 2 rows."] },
+        ...fields,
+      },
+    });
+    if (!created.ok()) throw new Error(`createPattern failed: ${created.status()} ${await created.text()}`);
+    const id = (await created.json()).pattern.id as number;
+    if (options.publish) {
+      const published = await context.post(`/api/patterns/${id}/publish`);
+      if (!published.ok()) throw new Error(`publish failed: ${published.status()}`);
+    }
+    return id;
+  } finally {
+    await context.dispose();
+  }
 }

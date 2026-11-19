@@ -219,3 +219,30 @@ package-lock.json
 package.json
 # wrangler dev local state
 .wrangler/
+
+# gitlab ssh key
+.ssh/
+.config/
+
+# Lighthouse reports (frontend/audit-report.report.*) -- generated output.
+frontend/audit-report.report.*
+
+# Smoke tests against a deployed site (frontend/e2e-smoke/, see
+# .gitlab-ci.yml) -- the session cookie of the smoke account, per-run
+# state, a local .env with its login, and run reports.
+frontend/e2e-smoke/.auth/
+frontend/e2e-smoke/.state.json
+frontend/e2e-smoke/.env
+frontend/smoke-results/
+frontend/tsconfig.tsbuildinfo
+
+# Storybook (frontend/.storybook) build output, logs and visual-test results
+*storybook.log
+storybook-static
+frontend/visual-report/
+frontend/visual-new-baselines.txt
+
+# Parser regression tests (backend/tests/regression): written on failure /
+# by `record.py show --draft`, for comparing with case.json -- not inputs.
+backend/tests/regression/cases/*/actual*.json
+backend/tests/regression/cases/*/expect.draft.json

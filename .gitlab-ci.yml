@@ -1,0 +1,286 @@
+# GitLab CI for yarnboard. Ports .github/workflows/ (which only ever ran
+# on the old GitHub remote).
+#
+# What runs when:
+#   - Merge request:         tests, build, e2e, dependency audits.
+#                            Smoke tests are available as manual buttons.
+#   - Push to dev:           smoke test of the dev site, 10 minutes later
+#                            (time for Render + Cloudflare to deploy).
+#   - Push to main:          tests, build, e2e, audits, then a smoke test
+#                            of the prod site 10 minutes later.
+#   - Schedule:              dependency audits + smoke tests. Set the
+#                            schedule's SMOKE_TARGET variable to dev, prod
+#                            or "dev prod".
+#   - "Run pipeline" button: everything, smoke tests as manual buttons.
+#
+# Results: the pipeline's Tests tab (JUnit reports) and job logs; GitLab
+# emails you when a pipeline fails. Smoke-test setup (test account,
+# CI variables, schedule) is in the README's "GitLab CI" section.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "push" && ($CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "dev")
+
+stages:
+  - test
+  - build
+  - e2e
+  - smoke
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  npm_config_cache: "$CI_PROJECT_DIR/.cache/npm"
+  # Overridable in Settings > CI/CD > Variables.
+  SMOKE_DEV_URL: "https://yarnboard-dev.morkar9696.workers.dev"
+
+# Tests run on merge requests, on main after a merge, and on manual runs --
+# not on every push to dev (its merge request already ran them).
+.test-rules: &test-rules
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+
+.python:
+  image: python:3.12
+  cache:
+    key: pip-$CI_JOB_NAME
+    paths: [.cache/pip]
+
+.node:
+  image: node:22
+  cache:
+    key:
+      files: [frontend/package-lock.json]
+    paths: [.cache/npm]
+
+# Python and Node together, for jobs that need both.
+.python-node:
+  image: nikolaik/python-nodejs:python3.12-nodejs22
+  cache:
+    - key: pip-$CI_JOB_NAME
+      paths: [.cache/pip]
+    - key:
+        files: [frontend/package-lock.json]
+      paths: [.cache/npm]
+
+backend-tests:
+  stage: test
+  extends: .python
+  <<: *test-rules
+  script:
+    - cd backend
+    - pip install -r requirements.txt -r requirements-dev.txt
+    - pytest --junitxml=junit.xml
+  artifacts:
+    when: always
+    reports:
+      junit: backend/junit.xml
+
+frontend-checks:
+  stage: test
+  extends: .node
+  <<: *test-rules
+  script:
+    - cd frontend
+    - npm ci --prefer-offline
+    - npx tsc -b
+    # Unit tests only -- the Storybook project needs a real browser, see
+    # frontend-stories below.
+    - npx vitest run --project=unit --reporter=default --reporter=junit --outputFile.junit=junit.xml
+  artifacts:
+    when: always
+    reports:
+      junit: frontend/junit.xml
+
+# Every Storybook story (frontend/src/**/*.stories.tsx) rendered in real
+# Chromium against a fake API (MSW): interaction tests + an axe
+# accessibility scan per story, then a screenshot of each story in English
+# and Hebrew compared with frontend/visual/__screenshots__/linux/.
+#
+# Baselines are strict: if a run had to write any Linux baseline that isn't
+# committed yet (a new story, or the very first run), the job FAILS and
+# lists them -- otherwise a branch that never commits them would pass
+# forever without comparing anything. The new PNGs are in this job's
+# artifacts (frontend/visual/__screenshots__/linux/): review them, commit
+# them, and the next run compares against them. After an intended UI
+# change, delete the affected PNGs and do the same.
+frontend-stories:
+  stage: test
+  # Must match the installed @playwright/test version (package-lock.json).
+  image: mcr.microsoft.com/playwright:v1.63.0-noble
+  <<: *test-rules
+  cache:
+    key:
+      files: [frontend/package-lock.json]
+    paths: [.cache/npm]
+  script:
+    - cd frontend
+    - npm ci --prefer-offline
+    - npx vitest run --project=storybook --reporter=default --reporter=junit --outputFile.junit=stories-junit.xml
+    - npm run build-storybook
+    - mkdir -p visual/__screenshots__/linux
+    - find visual/__screenshots__/linux -name '*.png' | sort > /tmp/baselines-before.txt
+    - npm run test:visual
+    - find visual/__screenshots__/linux -name '*.png' | sort > /tmp/baselines-after.txt
+    - comm -13 /tmp/baselines-before.txt /tmp/baselines-after.txt > visual-new-baselines.txt
+    - |
+      if [ -s visual-new-baselines.txt ]; then
+        echo "$(wc -l < visual-new-baselines.txt) screenshot baseline(s) were missing for Linux and have been written:"
+        cat visual-new-baselines.txt
+        echo "Download them from this job's artifacts (frontend/visual/__screenshots__/linux/), review and commit them."
+        exit 1
+      fi
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - frontend/visual-report/
+      - frontend/visual/__screenshots__/linux/
+      - frontend/visual-new-baselines.txt
+    reports:
+      junit: frontend/stories-junit.xml
+
+backend-dependency-audit:
+  stage: test
+  extends: .python
+  rules:
+    - !reference [.test-rules, rules]
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - cd backend
+    - pip install pip-audit
+    # Checks the pinned versions against the PyPA advisory database.
+    - pip-audit -r requirements.txt
+
+frontend-dependency-audit:
+  stage: test
+  extends: .node
+  rules:
+    - !reference [.test-rules, rules]
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - cd frontend
+    - npm ci --prefer-offline
+    # high, not npm's default "low": react-router-dom has two known
+    # moderate advisories that need an accepted v6 -> v7 migration to
+    # clear (tracked as an accepted risk). High/critical still fail.
+    - npm audit --omit=dev --audit-level=high
+
+build-check:
+  stage: build
+  extends: .python-node
+  <<: *test-rules
+  needs: [backend-tests, frontend-checks]
+  script:
+    # Mirrors render.yaml's buildCommand, so a broken production build is
+    # caught here rather than at deploy time. Keep the two in sync.
+    - cd backend && pip install -r requirements.txt && cd ../frontend && npm install && npm run build
+
+e2e:
+  stage: e2e
+  extends: .python-node
+  <<: *test-rules
+  needs: [backend-tests, frontend-checks]
+  variables:
+    DATABASE_URL: "sqlite:///e2e.db"
+    FLASK_ENV: development
+    CORS_ORIGINS: "http://localhost:5173"
+    VITE_API_BASE_URL: "http://localhost:5001"
+    # Explicitly blank, not just unset -- see the Makefile's `e2e` target
+    # (notifications.spec.ts relies on the log-instead-of-send fallback).
+    RESEND_ONBOARDING: ""
+    RESEND_NOTIFICATIONS: ""
+    RESEND_NEWSLETTER: ""
+    GEMINI_API_KEY: ""
+    # No venv here: pip installs into the image's Python, so `flask` is on PATH.
+    E2E_FLASK_BIN: flask
+    PLAYWRIGHT_JUNIT_OUTPUT_NAME: junit.xml
+  script:
+    - (cd backend && pip install -r requirements.txt -r requirements-dev.txt)
+    - (cd frontend && npm ci --prefer-offline && npx playwright install --with-deps chromium)
+    - (cd backend && flask --app wsgi seed-e2e)
+    - (cd backend && nohup flask --app wsgi run --port 5001 > ../backend.log 2>&1 &)
+    - (cd frontend && nohup npm run dev > ../frontend.log 2>&1 &)
+    - |
+      for url in http://localhost:5001/api/health http://localhost:5173; do
+        for i in $(seq 1 60); do curl -sf "$url" > /dev/null && break; sleep 1; done
+        curl -sf "$url" > /dev/null || { echo "$url never came up"; exit 1; }
+      done
+    - cd frontend && npx playwright test --reporter=list,junit,html
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - frontend/playwright-report/
+      - backend.log
+      - frontend.log
+    reports:
+      junit: frontend/junit.xml
+
+# ---- Smoke tests against the deployed sites (frontend/e2e-smoke/) ----
+
+.smoke:
+  stage: smoke
+  # Must match the installed @playwright/test version (package-lock.json).
+  image: mcr.microsoft.com/playwright:v1.63.0-noble
+  needs: []
+  cache:
+    key:
+      files: [frontend/package-lock.json]
+    paths: [.cache/npm]
+  script:
+    - |
+      for name in SMOKE_BASE_URL SMOKE_EMAIL SMOKE_PASSWORD; do
+        if [ -z "$(printenv "$name")" ]; then
+          echo "Missing $SMOKE_VARS_HINT -- see the README's GitLab CI section."
+          exit 1
+        fi
+      done
+    - cd frontend
+    - npm ci --prefer-offline
+    - npm run test:smoke
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - frontend/smoke-results/
+    reports:
+      junit: frontend/smoke-results/junit.xml
+
+smoke-dev:
+  extends: .smoke
+  variables:
+    SMOKE_BASE_URL: $SMOKE_DEV_URL
+    SMOKE_EMAIL: $SMOKE_DEV_EMAIL
+    SMOKE_PASSWORD: $SMOKE_DEV_PASSWORD
+    SMOKE_REQUIRE: "gemini,proxy_secret,proxy_verified"
+    SMOKE_VARS_HINT: "SMOKE_DEV_EMAIL / SMOKE_DEV_PASSWORD (or SMOKE_DEV_URL)"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SMOKE_TARGET =~ /dev/
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "dev"
+      when: delayed
+      start_in: 10 minutes
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" || $CI_PIPELINE_SOURCE == "web"
+      when: manual
+      allow_failure: true
+
+smoke-prod:
+  extends: .smoke
+  variables:
+    SMOKE_BASE_URL: $SMOKE_PROD_URL
+    SMOKE_EMAIL: $SMOKE_PROD_EMAIL
+    SMOKE_PASSWORD: $SMOKE_PROD_PASSWORD
+    SMOKE_REQUIRE: "gemini,email_onboarding,email_notifications,proxy_secret,proxy_verified"
+    SMOKE_VARS_HINT: "SMOKE_PROD_URL / SMOKE_PROD_EMAIL / SMOKE_PROD_PASSWORD"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SMOKE_TARGET =~ /prod/
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+      when: delayed
+      start_in: 10 minutes
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" || $CI_PIPELINE_SOURCE == "web"
+      when: manual
+      allow_failure: true

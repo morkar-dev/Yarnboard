@@ -23,6 +23,7 @@ text and the target language's field-name suffix differ between them.
 """
 
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -37,6 +38,8 @@ import requests
 # target translation doesn't use this: standard English crochet/knitting
 # abbreviations (sc/dc/hdc/ch/...) are already unambiguous, so there's no
 # equivalent terminology-drift risk to hand-correct for that direction.
+logger = logging.getLogger(__name__)
+
 GLOSSARY_PATH = Path(__file__).parent / "translation_glossary.json"
 
 GEMINI_API_URL_TEMPLATE = (
@@ -49,14 +52,39 @@ GEMINI_API_URL_TEMPLATE = (
 # available to new users"). "-latest" trades a small amount of
 # translation-output stability for not silently breaking down the line.
 GEMINI_MODEL = "gemini-flash-latest"
+# Tried when GEMINI_MODEL is overloaded (503 "high demand"), rate-limited
+# (429) or too slow. Seen for days at a time in November 2026: the main
+# model answered 503 to nearly every call while the lite model read a
+# pattern photo correctly in about 9 s. Lighter, so translations of long
+# patterns may be a little rougher -- better than no answer.
+GEMINI_FALLBACK_MODEL = "gemini-flash-lite-latest"
+# Both can be changed per deployment without a code change (Render env
+# vars), e.g. when Google retires one of the aliases.
+GEMINI_MODEL_ENV = "GEMINI_MODEL"
+GEMINI_FALLBACK_MODEL_ENV = "GEMINI_FALLBACK_MODEL"
 REQUEST_TIMEOUT_SECONDS = 60
+# The main model's attempt is cut shorter than REQUEST_TIMEOUT_SECONDS so
+# a slow one still leaves the fallback enough of TOTAL_BUDGET_SECONDS.
+PRIMARY_ATTEMPT_SECONDS = 45
 # Gemini occasionally 503s under load (seen directly in production) --
 # retried automatically rather than failing the whole translate request
-# on a transient blip. A 4xx (bad request, invalid key, etc.) is never
-# retried -- that's not going to succeed on a second attempt, it'll just
-# make the caller wait longer to see the same error.
+# on a transient blip, on the fallback model after the main one fails.
+# A 4xx (bad request, invalid key, etc.) is never retried -- that's not
+# going to succeed on a second attempt, it'll just make the caller wait
+# longer to see the same error -- except a 429 from the main model,
+# which only says that model is busy for us; the fallback has its own
+# limits.
 MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = 2
+# All attempts plus backoff must finish inside gunicorn's 90 s worker
+# timeout (backend/gunicorn.conf.py), with room left for the rest of the
+# request -- otherwise a slow Gemini gets the worker killed and the user
+# sees a bare proxy 502 instead of our own error message. Each attempt's
+# timeout is cut to what's left, and no attempt starts with less than
+# MIN_ATTEMPT_SECONDS remaining (too short to be worth it).
+TOTAL_BUDGET_SECONDS = 75
+MIN_ATTEMPT_SECONDS = 10
+_monotonic = time.monotonic  # patched in tests
 
 # Schema Gemini must respond in -- one instructions entry per input part,
 # in the same order, so _build_translated_instructions can re-associate
@@ -150,14 +178,16 @@ def _build_glossary_section(glossary: dict[str, str]) -> str:
     )
 
 
-def _call_gemini(prompt: str) -> dict:
+def _call_gemini(prompt: str, *, extra_parts: list[dict] | None = None, schema: dict | None = None) -> dict:
     """
-    POST `prompt` to Gemini and return the parsed {title, materials,
-    abbreviations, instructions} response object -- the actual HTTP call,
-    retry-on-transient-failure, and response-shape handling, shared by
-    both translation directions (see module docstring). Raises
-    TranslationError if GEMINI_API_KEY isn't set, every retry is
-    exhausted, or the response doesn't parse into the expected shape.
+    POST `prompt` to Gemini and return the parsed JSON response object
+    ({title, materials, abbreviations, instructions} unless another
+    `schema` is given) -- the actual HTTP call, retry-on-transient-failure,
+    and response-shape handling, shared by both translation directions
+    (see module docstring) and by photo transcription (transcription.py,
+    which passes images as `extra_parts`). Raises TranslationError if
+    GEMINI_API_KEY isn't set, every retry is exhausted, or the response
+    doesn't parse into the expected shape.
     """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -165,34 +195,49 @@ def _call_gemini(prompt: str) -> dict:
             "GEMINI_API_KEY is not set -- cannot translate. See README for setup."
         )
 
-    url = GEMINI_API_URL_TEMPLATE.format(model=GEMINI_MODEL)
+    primary = os.environ.get(GEMINI_MODEL_ENV) or GEMINI_MODEL
+    fallback = os.environ.get(GEMINI_FALLBACK_MODEL_ENV) or GEMINI_FALLBACK_MODEL
+    model = primary
+    deadline = _monotonic() + TOTAL_BUDGET_SECONDS
     response = None
     for attempt in range(MAX_RETRIES + 1):
+        remaining = deadline - _monotonic()
+        limit = PRIMARY_ATTEMPT_SECONDS if model == primary and fallback != primary else REQUEST_TIMEOUT_SECONDS
         try:
             response = requests.post(
-                url,
+                GEMINI_API_URL_TEMPLATE.format(model=model),
                 params={"key": api_key},
                 json={
-                    "contents": [{"parts": [{"text": prompt}]}],
+                    "contents": [{"parts": [{"text": prompt}, *(extra_parts or [])]}],
                     "generationConfig": {
                         "responseMimeType": "application/json",
-                        "responseSchema": _RESPONSE_SCHEMA,
+                        "responseSchema": schema or _RESPONSE_SCHEMA,
                     },
                 },
-                timeout=REQUEST_TIMEOUT_SECONDS,
+                timeout=min(limit, remaining),
             )
             response.raise_for_status()
             break
         except requests.RequestException as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            switch = model != fallback and (status is None or status == 429 or status >= 500)
             # A 4xx won't succeed on retry (bad request, invalid key,
             # etc.) -- fail immediately instead of burning the retry
-            # budget on something that can't change.
-            is_client_error = exc.response is not None and 400 <= exc.response.status_code < 500
-            if is_client_error or attempt == MAX_RETRIES:
+            # budget on something that can't change. A 429 is retried
+            # only by switching to the fallback.
+            is_client_error = status is not None and 400 <= status < 500 and not switch
+            # Switching models needs no backoff: the fallback isn't the
+            # one that's overloaded.
+            backoff = 0 if switch else RETRY_BACKOFF_SECONDS * (attempt + 1)
+            out_of_time = deadline - _monotonic() - backoff < MIN_ATTEMPT_SECONDS
+            if is_client_error or attempt == MAX_RETRIES or out_of_time:
                 raise TranslationError(
-                    f"Gemini API request failed: {str(exc).replace(api_key, '<redacted>')}"
+                    f"Gemini API request failed ({model}): {str(exc).replace(api_key, '<redacted>')}"
                 ) from exc
-            time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
+            if switch:
+                logger.warning("Gemini %s failed (%s); falling back to %s", model, status or type(exc).__name__, fallback)
+                model = fallback
+            time.sleep(backoff)
 
     try:
         raw_text = response.json()["candidates"][0]["content"]["parts"][0]["text"]

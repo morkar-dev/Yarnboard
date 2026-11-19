@@ -296,6 +296,10 @@ class Pattern(db.Model):
         return {
             "id": self.id,
             "original_url": self.original_url,
+            # False for a pattern pasted as text / read from photos with no
+            # source link -- original_url is then a "manual:<uuid>"
+            # placeholder (see submit_pattern), not something to link to.
+            "has_source_link": not self.original_url.startswith("manual:"),
             "title": self.title,
             "author": self.author,
             "source_site_name": self.source_site_name,

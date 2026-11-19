@@ -47,11 +47,22 @@ hot-reload -- see Local setup below.
   loopback/private/link-local addresses, checked both up front and
   per-request) so a submitted URL can't be used to read local files off
   the server or reach internal services (SSRF).
+- **Text & photo patterns**: a pattern can also be pasted as plain text
+  (`parse_pattern_text` in `scraper.py`: first line is the title,
+  `Heading:` / `# Heading` lines start sections and parts) or
+  photographed -- up to 5 photos, shrunk in the browser, then transcribed
+  by Gemini (`backend/app/transcription.py`, same `GEMINI_API_KEY`) into
+  that same text format. Both land on the usual review draft. The source
+  link is optional for these; without one the pattern is stored with a
+  `manual:<uuid>` placeholder URL and `has_source_link: false`.
 - **Translation & RTL**: a pattern can be machine-translated in either
   direction -- an English-primary pattern gets a Hebrew overlay, or a
   Hebrew-primary one gets an English overlay -- via the Gemini API
-  (`backend/app/translation.py`, requires `GEMINI_API_KEY`). A
-  translation is reviewable/correctable on the pattern's Edit page and
+  (`backend/app/translation.py`, requires `GEMINI_API_KEY`). When the
+  main model (`gemini-flash-latest`) is overloaded, rate-limited or too
+  slow, the same request is retried on `gemini-flash-lite-latest`; set
+  `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` on a service to change either
+  without a code change. A translation is reviewable/correctable on the pattern's Edit page and
   marked reviewed once a person touches it. Content fields throughout the
   app use `dir="auto"` so right-to-left text displays correctly
   regardless of which language the UI chrome itself is in.
@@ -86,8 +97,9 @@ hot-reload -- see Local setup below.
   if `SECRET_KEY` is left at its insecure default; passwords must be at
   least 8 characters; and user-controlled text (username, pattern title)
   is HTML-escaped before being interpolated into outbound emails. See
-  `.github/workflows/security.yml` for the CI job that regression-tests
-  all of this plus dependency vulnerability scanning (`pip-audit`,
+  `backend/tests/test_security.py` (run in CI, see `.gitlab-ci.yml`)
+  for the regression tests of all this, plus the CI's dependency
+  vulnerability scanning (`pip-audit`,
   `npm audit`).
 
 ## Local setup
@@ -185,6 +197,101 @@ in your own shell only, never commit it.
 Not run in CI, and deliberately doesn't check real email delivery -- see
 `frontend/e2e-dev/notifications.spec.ts`'s docstring for why.
 
+## Storybook: component, accessibility and visual tests
+
+Every component (and the pattern detail, submit and edit pages) has
+stories in `frontend/src/**/*.stories.tsx` -- each one a fixed UI state
+(guest vs logged in, empty, error, loading, Hebrew/RTL, phone width). They
+run against a fake API (MSW, `frontend/src/mocks/`), never the backend.
+
+```bash
+npm --prefix frontend run storybook        # browse them at localhost:6006
+npm --prefix frontend run test:stories     # interaction tests + axe a11y scan
+```
+
+`test:stories` renders every story in headless Chromium, runs its `play`
+function (clicks, typing, assertions), then fails on any accessibility
+violation. Play functions find buttons and labels by their translated text
+(`t("submit.modeText")` from `frontend/src/mocks/text.ts`), never by
+hard-coded English, because the visual tests run every story in Hebrew too
+and fail if a play function throws there. If a rule genuinely can't be fixed yet, switch it off on that
+one story with a comment rather than globally.
+
+Visual regression compares a screenshot of every story, in English and
+Hebrew, with the PNGs in `frontend/visual/__screenshots__/<os>/`:
+
+```bash
+npm --prefix frontend run build-storybook
+npm --prefix frontend run test:visual          # compare
+npm --prefix frontend run test:visual:update   # accept an intended change
+```
+
+Baselines are per OS because fonts render differently: `darwin/` is for
+local runs on a Mac, `linux/` is CI's. Locally, a story with no baseline
+yet gets one written and passes (with a "new baseline" note); add
+`-- --update-snapshots=none` for the strict mode, where a missing baseline
+fails. Review and commit new/changed PNGs like any other diff (the report
+lands in `frontend/visual-report/`).
+
+CI is strict about Linux baselines: if a `frontend-stories` run had to
+write any (a new story, or the very first run), the job fails and lists
+them in `visual-new-baselines.txt`. Download that job's artifacts, review
+the PNGs, and commit them under `frontend/visual/__screenshots__/linux/`;
+the next run compares against them. That's also how to accept an
+intended UI change on Linux: delete the affected PNGs and let CI write
+fresh ones.
+
+## GitLab CI
+
+`.gitlab-ci.yml` runs the checks; results show on each merge request, in
+the pipeline's **Tests** tab, and GitLab emails you when a pipeline fails.
+
+| When | What runs |
+| --- | --- |
+| Merge request | backend tests, frontend type check + tests, production build, e2e suite, dependency audits; smoke tests as manual buttons |
+| Push to `dev` | smoke test of the dev site, 10 minutes later (time to deploy) |
+| Push to `main` | all the tests, then a smoke test of the prod site 10 minutes later |
+| Schedule | dependency audits + smoke tests (`SMOKE_TARGET` = `dev`, `prod` or `dev prod`) |
+
+`.github/workflows/` is the older GitHub Actions version of the same
+checks; it only ran on the old GitHub remote.
+
+### Smoke tests against the deployed sites
+
+`frontend/e2e-smoke/` checks a live site end to end, through the
+Cloudflare Worker like a real visitor: `/api/health` settings, opening a
+pattern logged in, pasting text, a real Gemini photo read and a real
+Gemini translation. It waits out Render's free-tier wake-up first. Each
+run creates one private pattern in the test account and deletes it at
+the end.
+
+`/api/health` reports which settings a deployment has, as true/false
+only: `gemini`, `email_onboarding`, `email_notifications`, `proxy_secret`,
+and `proxy_verified` (this request came through the Worker with a
+matching `PROXY_SHARED_SECRET`). The smoke test fails if a required one
+is false -- dev requires `gemini`, `proxy_secret`, `proxy_verified`; prod
+also requires both email keys.
+
+One-time setup:
+
+1. On each site, register a normal (non-admin) account just for this,
+   with its own strong password, and verify its email.
+2. In GitLab: **Settings > CI/CD > Variables**, add (mark the passwords
+   **Masked**; mark them **Protected** only if `dev` and `main` are
+   protected branches, or the smoke jobs won't see them):
+   - `SMOKE_DEV_EMAIL`, `SMOKE_DEV_PASSWORD`
+   - `SMOKE_PROD_URL` (the prod site's address), `SMOKE_PROD_EMAIL`,
+     `SMOKE_PROD_PASSWORD`
+   - optionally `SMOKE_DEV_URL`, if the dev site moves from
+     `https://yarnboard-dev.morkar9696.workers.dev`
+3. In **Build > Pipeline schedules**, add a daily schedule on `dev` with
+   the variable `SMOKE_TARGET` = `dev prod`.
+
+To run it by hand, put `SMOKE_BASE_URL`, `SMOKE_EMAIL` and
+`SMOKE_PASSWORD` in `frontend/e2e-smoke/.env` (git-ignored) and run
+`npm run test:smoke` in `frontend/`; the report is in
+`frontend/smoke-results/html/`.
+
 ## Deploying to Render
 
 Yarnboard deploys as a **single** Render web service (not separate
@@ -258,9 +365,9 @@ domain. That's required, not just tidy -- with the API called directly on
 Safari (and every iOS browser) drops, so login appears to work and then
 every call 401s.
 
-Two stages, **two separate Cloudflare projects**, one shared Render
-backend (there's no separate staging API today -- both stages call the
-same one):
+Two stages, each with **its own Cloudflare project and its own Render
+backend** -- the dev Worker proxies to a dev API built from `dev`, so
+backend changes can be tried on the dev site before they reach prod:
 
 |                    | **prod**                          | **dev**                                    |
 | ------------------ | ---------------------------------- | ------------------------------------------- |
@@ -269,18 +376,42 @@ same one):
 | Deploy command      | `npx wrangler deploy --env=""`     | `npx wrangler deploy --env dev`             |
 | Served at           | your custom domain                 | the auto-generated `yarnboard-dev.<your-subdomain>.workers.dev` |
 | `VITE_API_BASE_URL` | **unset** (relative `/api` via the proxy) | **unset**                           |
+| Render backend (`API_ORIGIN`) | `yarnboard` -- `https://yarnboard.onrender.com`, from `main` (`wrangler.jsonc`'s top-level `vars`) | `yarnboard-dev-api` -- `https://yarnboard-dev-api.onrender.com`, from `dev` (`env.dev.vars`; branch previews use it too) |
 
 A single project can't safely cover both: Cloudflare's git integration
 deploys whatever branch triggers a build to the Worker name in
 `wrangler.jsonc`, so without the separate `env.dev`/`--env dev` config
 above, a `dev` push would silently overwrite the live prod Worker.
 
-1. Deploy the backend to Render as above (or point at an existing
-   deployment) -- note its URL, e.g. `https://yarnboard.onrender.com`.
-2. Point `API_ORIGIN` in `wrangler.jsonc` (both the default config and
-   `env.dev`) at that Render URL. `CORS_ORIGINS` on Render isn't needed
-   for this setup -- the proxy strips the `Origin` header, since the
-   browser's request is same-origin.
+1. Deploy both backends to Render:
+   - **Prod (`yarnboard`)**: the Blueprint in "Deploying to Render" above
+     -- `render.yaml` defines only this one service.
+   - **Dev (`yarnboard-dev-api`)**: create it by hand (not through the
+     Blueprint, which would only create a second `yarnboard`). In the
+     Render dashboard: **New -> Web Service**, pick this repo, then:
+     - Name: `yarnboard-dev-api` (this sets its URL,
+       `https://yarnboard-dev-api.onrender.com`)
+     - Branch: `dev`, with Auto-Deploy **On Commit**
+     - Runtime Python, and the same Build and Start commands as prod
+       (step 2 of "Deploying to Render")
+     - Environment: the same variables as prod (step 3 there), except
+       `DATABASE_URL` -- point it at a separate database (e.g. a Neon
+       branch) so dev data stays out of prod, and run `init-db` against
+       it once (step 4) -- and `PUBLIC_APP_URL`, which should be the dev
+       site (`https://yarnboard-dev.<your-subdomain>.workers.dev`) so
+       email links open there.
+2. Point `API_ORIGIN` in `wrangler.jsonc` at them: the default config at
+   the prod service, `env.dev` and `previews` at the dev one.
+   `CORS_ORIGINS` on Render isn't needed for this setup -- the proxy
+   strips the `Origin` header, since the browser's request is same-origin.
+   Then set `PROXY_SHARED_SECRET` (a long random string) on each Render
+   service (Environment) and as a secret on the Worker in front of it --
+   `npx wrangler secret put PROXY_SHARED_SECRET` for prod and
+   `npx wrangler secret put PROXY_SHARED_SECRET --env dev` for dev. Each
+   Worker's value must match its own backend's. It lets the
+   backend trust the visitor IP the Worker forwards (see `client_ip()` in
+   `backend/app/extensions.py`); without it, every visitor coming through
+   the Worker shares one login/register rate-limit bucket.
 3. In the Cloudflare dashboard, create **two** Workers projects
    connected to this repo -- one tracking `main`, one tracking `dev`.
    This repo's root `wrangler.jsonc` already defines both Worker configs

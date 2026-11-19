@@ -2,11 +2,14 @@
  * the community library (see GET /api/patterns/community), but saving a
  * pattern to your own list is still login-only, so the Save button and
  * the saved-lookup fetch are both skipped entirely for anonymous
- * visitors rather than shown disabled. */
+ * visitors rather than shown disabled.
+ *
+ * `?q=` (set by the navbar's NavSearch) narrows the list server-side to
+ * patterns whose title or author matches. */
 import { useEffect, useState } from "react";
 import { Alert, Col, Row, Spinner } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { fetchCommunityPatterns, fetchMySaved, savePattern, unsavePattern } from "../api/client";
 import PatternCard from "../components/PatternCard";
 import { useAuth } from "../context/AuthContext";
@@ -18,11 +21,25 @@ export default function CommunityPage() {
   const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [searchParams] = useSearchParams();
+  const query = (searchParams.get("q") ?? "").trim();
 
   useEffect(() => {
-    fetchCommunityPatterns()
-      .then(setPatterns)
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    setLoading(true);
+    fetchCommunityPatterns(query)
+      .then((result) => {
+        if (!cancelled) setPatterns(result);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [query]);
+
+  useEffect(() => {
     if (user) {
       fetchMySaved().then((saved) => setSavedIds(new Set(saved.map((p) => p.id))));
     }
@@ -46,7 +63,13 @@ export default function CommunityPage() {
 
   return (
     <div>
-      <h1 className="mb-4">{t("community.title")}</h1>
+      <h1 className={query ? "mb-1" : "mb-4"}>{t("community.title")}</h1>
+      {query && (
+        <p className="text-muted mb-4">
+          {t("community.searchResults", { count: patterns.length, query })}{" "}
+          <Link to="/community">{t("community.clearSearch")}</Link>
+        </p>
+      )}
       {!user && (
         <Alert variant="light">
           {t("community.guestNotice")}{" "}
@@ -54,7 +77,7 @@ export default function CommunityPage() {
           <Link to="/register">{t("community.guestNoticeSignupLink")}</Link>.
         </Alert>
       )}
-      {patterns.length === 0 && <p className="text-muted">{t("community.empty")}</p>}
+      {patterns.length === 0 && !query && <p className="text-muted">{t("community.empty")}</p>}
       <Row xs={1} sm={2} lg={3} className="g-3">
         {patterns.map((pattern) => (
           <Col key={pattern.id}>

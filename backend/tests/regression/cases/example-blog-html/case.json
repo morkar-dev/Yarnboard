@@ -1,0 +1,18 @@
+{
+  "description": "Example case (format reference): a simple blog post saved as HTML -- the same page tests/fixtures/mock-pattern.html uses. Shows exact checks: every field spelled out.",
+  "kind": "html",
+  "source_url": "https://woolyblog.example.com/mock-pattern",
+  "expect": {
+    "title": "Cozy Beanie Pattern",
+    "author": "Jane Designer",
+    "materials": { "lines": ["1 skein worsted weight yarn", "4.5mm circular needles"] },
+    "abbreviations": { "lines": ["k: knit", "p: purl"] },
+    "instructions": {
+      "Part 1: Brim": ["Cast on 88 stitches.", "Join in the round, place marker."],
+      "Part 2: Body": ["Knit every round until piece measures 6 inches from cast on."]
+    },
+    "source_site_name": "Wooly Blog",
+    "source_domain": "woolyblog.example.com",
+    "photo_url": null
+  }
+}

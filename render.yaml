@@ -13,6 +13,10 @@
 # create the database at neon.tech, then paste its connection string into
 # DATABASE_URL below.
 #
+# Only the prod service is defined here. The dev backend
+# (yarnboard-dev-api, built from `dev`) is created by hand -- see README's
+# "Deploying the frontend to Cloudflare" section.
+#
 # This file describes *what* to deploy; it does not deploy anything by
 # itself. See README.md "Deploying to Render" for the click-by-click steps.
 
@@ -47,6 +51,13 @@ services:
       # than one, e.g. a custom domain plus a *.pages.dev/*.workers.dev
       # preview URL).
       - key: CORS_ORIGINS
+        sync: false
+      # Same random value as the prod Cloudflare Worker's
+      # PROXY_SHARED_SECRET secret (the dev Worker pairs with the separate
+      # yarnboard-dev-api service instead) -- lets the backend trust the
+      # visitor IP the Worker forwards, for per-IP rate limiting. See
+      # client_ip() in backend/app/extensions.py.
+      - key: PROXY_SHARED_SECRET
         sync: false
       # VITE_API_BASE_URL is deliberately NOT set here: the frontend build
       # falls back to relative "/api/..." requests when it's unset (see

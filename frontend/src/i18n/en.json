@@ -21,24 +21,30 @@
     "logout": "Log out",
     "login": "Log in",
     "signup": "Sign up",
-    "language": "עברית"
+    "language": "עברית",
+    "searchPlaceholder": "Search patterns...",
+    "searchSubmit": "Search",
+    "searchOpen": "Open search"
   },
   "home": {
     "welcome": "Welcome",
     "welcomeNamed": "Welcome, {{username}}",
-    "subtitle": "Here's how to get the most out of Yarnboard.",
-    "stitchFiddleTitle": "Import a Stitch Fiddle chart",
-    "stitchFiddleDescription": "Save a stitchfiddle.com share link, then import it with one click. Yarnboard turns the chart into a colored grid you can view alongside a plain color-key list - no written instructions, since that's a premium Stitch Fiddle feature, but you can always add your own via the pattern's Edit page afterwards.",
+    "subtitle": "Save knitting & crochet patterns and check off every step as you go.",
+    "stitchFiddleTitle": "Import a chart",
+    "stitchFiddleDescription": "Turn a Stitch Fiddle link into a colored grid.",
     "stitchFiddleCta": "Import a chart",
-    "submitTitle": "Submit a pattern from a URL or PDF",
-    "submitDescription": "Paste a link to a pattern page and Yarnboard scrapes the materials, abbreviations, and instructions automatically. If a site blocks automatic fetching, or the pattern only exists as a PDF (e.g. a paid Etsy/Ravelry download), upload the saved page or PDF instead. Either way, you review and can edit everything, and it's saved privately to your account - you choose when (or whether) to publish it to the community.",
+    "submitTitle": "Add a pattern",
+    "submitDescription": "From a link, a saved page or a PDF.",
     "submitCta": "Submit a pattern",
-    "useTitle": "Use an existing pattern",
-    "useDescription": "Browse everything the community has published, save the ones you want to come back to, and check off each instruction step as you work - your progress is tracked per pattern, just for you.",
+    "useTitle": "Browse & follow",
+    "useDescription": "Pick a community pattern and track your progress.",
     "useCta": "Browse the community",
-    "editTitle": "Edit a pattern you've uploaded",
-    "editDescription": "Fix a typo, update materials, or add missing steps on any pattern you submitted, from My Uploads. Heads up: editing a pattern's instructions resets everyone's checklist progress on it, since the steps may no longer line up.",
-    "editCta": "Go to My Uploads"
+    "editTitle": "Edit your uploads",
+    "editDescription": "Fix typos or add missing steps.",
+    "editCta": "My Uploads",
+    "step1": "Paste a link",
+    "step2": "Review",
+    "step3": "Stitch & check off"
   },
   "auth": {
     "login": {
@@ -62,7 +68,16 @@
       "failed": "Registration failed.",
       "checkEmailTitle": "Check your email",
       "checkEmailBody": "We sent a verification link to {{email}}. Click it to activate your account, then come back and log in.",
-      "goToLogin": "Go to login"
+      "goToLogin": "Go to login",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "ruleLength": "At least {{min}} characters",
+      "ruleLetter": "At least one letter",
+      "ruleNumber": "At least one number",
+      "confirmPasswordLabel": "Confirm password",
+      "passwordsDontMatch": "Passwords don't match.",
+      "usernameInvalid": "Choose a username of up to {{max}} characters.",
+      "emailInvalid": "Enter a valid email address, like name@example.com."
     },
     "verify": {
       "title": "Email verification",
@@ -78,7 +93,10 @@
     "empty": "No patterns have been published yet.",
     "guestNotice": "Browsing as a guest - you can view every pattern and check off steps as you go. Want to save patterns or upload your own?",
     "guestNoticeUploadLink": "See how uploading works",
-    "guestNoticeSignupLink": "sign up"
+    "guestNoticeSignupLink": "sign up",
+    "searchResults_one": "{{count}} pattern matching \"{{query}}\".",
+    "searchResults_other": "{{count}} patterns matching \"{{query}}\".",
+    "clearSearch": "Clear search"
   },
   "myUploads": {
     "title": "My Uploads",
@@ -121,7 +139,7 @@
   },
   "submit": {
     "title": "Submit a Pattern",
-    "intro": "Paste a link to a knitting or crochet pattern webpage. We'll pull out the title, materials, abbreviations, and instructions for you to review before publishing.",
+    "intro": "Add a pattern from a link, a saved page or PDF, pasted text, or photos. We'll sort it into materials, abbreviations, and steps for you to review before saving.",
     "urlLabel": "Pattern URL",
     "urlPlaceholder": "https://example.com/my-pattern",
     "previewButton": "Preview",
@@ -129,8 +147,9 @@
     "genericFetchError": "Could not fetch that page. Check the URL and try again.",
     "modeLink": "From a link",
     "modeUpload": "Upload a file",
-    "uploadIntro": "Upload a saved HTML page or a PDF - useful if a site blocks automatic fetching, or if the pattern only exists as a PDF in the first place (e.g. a paid Etsy/Ravelry download). The URL is still used to credit the original source and to avoid duplicates.",
-    "uploadUrlHint": "Even though you're uploading a file, the original page's URL is still needed for attribution and to avoid duplicates.",
+    "uploadIntro": "Upload a saved HTML page or a PDF - useful if a site blocks automatic fetching, or if the pattern only exists as a PDF (e.g. a paid Etsy/Ravelry download).",
+    "uploadUrlHint": "A saved web page needs the original page's link, to credit the source and avoid duplicates. For a PDF it's optional.",
+    "uploadPdfUrlHint": "If this PDF also has a page online, add its link to credit the source and catch duplicates. The author is read from the PDF itself.",
     "uploadFileLabel": "Saved HTML or PDF file",
     "uploadButton": "Preview from file",
     "processing": "Processing...",
@@ -142,7 +161,31 @@
     "guestPromptTail": "to actually submit a pattern - uploads are tied to an account so you can edit them later.",
     "alreadyHaveIntro": "Already have this pattern saved? Check the",
     "communityPage": "Community",
-    "alreadyHaveTail": "page first - Yarnboard avoids storing the same source URL twice."
+    "alreadyHaveTail": "page first - Yarnboard avoids storing the same source URL twice.",
+    "fetchFailedTitle": "That link didn't work",
+    "whyBlocked": "Site blocks it",
+    "whyLogin": "Needs a login",
+    "whyNotPattern": "Not the pattern page",
+    "howTitle": "Save it, then upload below:",
+    "howComputer": "Ctrl/⌘ + S → HTML",
+    "howPhone": "Share → Print → PDF",
+    "modeGroupLabel": "How do you want to add the pattern?",
+    "modeText": "Paste text",
+    "modePhotos": "Photos",
+    "textLabel": "Pattern text",
+    "textPlaceholder": "Cozy Beanie\nMaterials:\n- 2 skeins of yarn\nInstructions:\n1. Cast on 96 stitches.",
+    "textHint": "Title on the first line. Start sections with \"Materials:\", \"Instructions:\" or a part name ending in \":\".",
+    "textButton": "Preview",
+    "sourceUrlLabel": "Original link (optional)",
+    "genericTextError": "Could not read that text.",
+    "photosLabel": "Photos of the pattern",
+    "photosHint": "A printed page, a book, or a handwritten card - in page order, up to {{max}}. The first photo becomes the pattern's picture.",
+    "photosTooMany": "Only the first {{max}} photos were kept.",
+    "photoAlt": "Photo {{number}}",
+    "removePhoto": "Remove photo {{number}}",
+    "photosButton": "Read photos",
+    "readingPhotos": "Reading your photos...",
+    "genericPhotosError": "Could not read those photos."
   },
   "review": {
     "title": "Review before saving",
@@ -150,7 +193,9 @@
     "saveNotice": "This pattern is saved privately to your account - only you (and admins) can see it until you choose to publish it to the community from the pattern's page.",
     "saveButton": "Save Pattern",
     "saving": "Saving...",
-    "saveFailed": "Saving failed."
+    "saveFailed": "Saving failed.",
+    "noSourceLabel": "No original link - this pattern will be saved without one.",
+    "usePhotoLabel": "Use this photo as the pattern's picture"
   },
   "publishConsent": {
     "introLead": "Publishing to Yarnboard:",
@@ -173,11 +218,20 @@
     "movePartUpAria": "Move part \"{{part}}\" up",
     "movePartDown": "Move part down",
     "movePartDownAria": "Move part \"{{part}}\" down",
+    "partNameAria": "Name of part {{number}}",
     "deletePart": "Delete part",
     "deletePartAria": "Delete part \"{{part}}\"",
     "deleteStepAria": "Delete step {{number}} of \"{{part}}\"",
     "addStep": "+ Add step",
-    "addPart": "+ Add part"
+    "addPart": "+ Add part",
+    "materialsHint": "One item per line. Add a link with [name](https://...). Headings (#) and notes (>) work the same as in the instructions.",
+    "instructionsHint": "Start a line with # (or ##, ###...) for a heading, or > for a note - neither gets a checkbox. Steps starting with a row range like \"5-10\" get a row counter.",
+    "addHeading": "+ Add heading",
+    "addNote": "+ Add note",
+    "addMaterial": "+ Add material",
+    "materialAria": "Material {{number}}",
+    "deleteMaterialAria": "Delete material {{number}}",
+    "stepAria": "Step {{number}} of \"{{part}}\""
   },
   "patternDetail": {
     "edit": "Edit",
@@ -232,7 +286,14 @@
     "guestNotice": "You're checking items off as a guest - progress is saved on this device only. Log in to sync it to your account.",
     "collapseAll": "Collapse all",
     "expandAll": "Expand all",
-    "noInstructions": "No instructions were extracted for this pattern."
+    "noInstructions": "No instructions were extracted for this pattern.",
+    "clearAll": "Clear all checks",
+    "clearAllConfirm": "Uncheck every step and reset all row counters on this pattern?",
+    "clearAllFailed": "Couldn't clear your progress. Please try again.",
+    "counterDecrease": "One row back",
+    "counterIncrease": "One row done",
+    "counterProgress": "{{done}} / {{count}} rows (next: row {{row}})",
+    "counterDone": "All {{count}} rows done"
   },
   "editPattern": {
     "title": "Edit Pattern",
@@ -254,6 +315,8 @@
     "translationTitleLabel": "Title",
     "translationMaterialsLabel": "Materials",
     "translationAbbreviationsLabel": "Abbreviations",
+    "translationPartHeadingAria": "Translated heading of part \"{{part}}\"",
+    "translationStepAria": "Translation of step {{number}} of \"{{part}}\"",
     "translationInstructionsHeading": "Instructions",
     "translationReviewedNotice": "Marking these fields as saved also marks the translation as reviewed."
   },
@@ -297,6 +360,21 @@
     "invalid_progress_step": "That checklist step could not be found.",
     "link_forbidden": "You don't have permission to do that.",
     "file_too_large": "That file is too large (max {{max_mb}}MB).",
-    "cannot_share_with_uploader": "The uploader already has access to their own pattern."
+    "cannot_share_with_uploader": "The uploader already has access to their own pattern.",
+    "scraper_error": "We couldn't read that page automatically.",
+    "file_parse_error": "We couldn't read that file. Make sure it's the saved pattern page (HTML) or its PDF, and try again.",
+    "password_too_short": "Password must be at least 8 characters.",
+    "password_too_weak": "Password must contain at least one letter and one number.",
+    "invalid_email": "Please enter a valid email address.",
+    "username_too_long": "Username must be at most {{max}} characters.",
+    "text_required": "Paste the pattern's text first.",
+    "text_too_long": "That's too much text (max {{max_chars}} characters).",
+    "invalid_source_url": "The original link must start with http:// or https://.",
+    "photos_required": "Add at least one photo of the pattern.",
+    "too_many_photos": "Up to {{max_photos}} photos at a time.",
+    "invalid_photo": "One of those files isn't a photo we can read.",
+    "photo_read_error": "We couldn't read those photos right now. Please try again in a moment.",
+    "translation_error": "We couldn't translate this pattern right now. Please try again in a moment.",
+    "photo_no_text": "We couldn't find pattern text in those photos. Try clearer, closer photos."
   }
 }

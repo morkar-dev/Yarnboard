@@ -12,10 +12,13 @@ anything is saved (see the preview/submit split in patterns/routes.py).
 Treat every field this module returns as a suggestion, not ground truth.
 """
 
+import copy
 import io
 import ipaddress
 import re
 import socket
+import time
+import zlib
 from urllib.parse import unquote, urljoin, urlparse
 
 import pdfplumber
@@ -84,6 +87,10 @@ INSTRUCTIONS_KEYWORDS = [
 # no line-break markup at all, e.g. "1. Cast on 40 stitches. 2. Join...".
 NUMBERED_LINE_RE = re.compile(r"^\d+[.)]\s+")
 BOLD_STYLE_RE = re.compile(r"font-weight\s*:\s*(bold|[6-9]00)", re.IGNORECASE)
+# A source-page link kept inline as markdown -- "[Yarn name](https://...)"
+# -- see _linearize. Only materials keep these (the frontend renders them
+# as hyperlinks); every other section is stored as plain text.
+MARKDOWN_LINK_RE = re.compile(r"\[([^\[\]]*)\]\((https?://[^)\s]+)\)")
 
 
 class ScraperError(Exception):
@@ -98,7 +105,7 @@ def scrape_pattern_from_url(url: str, *, allow_file: bool = False) -> dict:
     responsible for showing this to the user for review before any Pattern
     row is created. Raises ScraperError on network failure or a non-200
     response (including sites that block automated fetching -- see
-    _looks_like_bot_challenge). See parse_pattern_html for what's returned
+    looks_like_cloudflare_challenge). See parse_pattern_html for what's returned
     and how parsing failures degrade.
 
     `allow_file` gates file:// support (see _fetch_html) -- it defaults to
@@ -108,31 +115,66 @@ def scrape_pattern_from_url(url: str, *, allow_file: bool = False) -> dict:
     entry point at the bottom of this module passes allow_file=True.
     """
     return parse_pattern_html(_fetch_html(url, allow_file=allow_file), url)
+# How long a bot-detection challenge page gets to clear on its own, and how
+# long the page itself gets to load. Kept well under gunicorn's request
+# timeout (backend/gunicorn.conf.py) -- a fetch that outlives it gets killed
+# mid-request and the user sees a bare 500 instead of the friendly
+# scraper_error.
+PAGE_LOAD_TIMEOUT_MS = 15_000
+CHALLENGE_WAIT_MS = 8_000
+
+# A challenge page announces itself in its <title> ("Just a moment...",
+# "Attention Required! | Cloudflare"), so the title alone decides whether
+# to wait for one to clear -- a real page whose copy happens to say "just a
+# moment" mustn't be mistaken for one.
+CHALLENGE_TITLE_PHRASES = (
+    "just a moment",
+    "attention required",
+    "checking your browser",
+    "security verification",
+)
+# Only consulted when the response was already an error (see _fetch_html),
+# and only near the top of the page, where a block page states it.
+BLOCK_BODY_PHRASES = (
+    "verify you are human",
+    "performing security verification",
+    "you have been blocked",
+    "checking your browser",
+)
+BLOCK_BODY_PREFIX_CHARS = 1_000
+
+
 def looks_like_cloudflare_challenge(page: Page) -> bool:
     title = page.title().lower()
-    body_text = page.locator("body").inner_text(timeout=5_000).lower()
+    return any(phrase in title for phrase in CHALLENGE_TITLE_PHRASES)
 
-    challenge_phrases = (
-        "just a moment",
-        "checking your browser",
-        "verify you are human",
-        "performing security verification",
-        "cloudflare",
-    )
 
-    return any(
-        phrase in title or phrase in body_text
-        for phrase in challenge_phrases
-    )
-def wait_for_article(page: Page) -> None:
+def _error_page_looks_blocked(page: Page) -> bool:
+    """For a non-OK response whose title gave nothing away: does the top of
+    the page read like a bot block rather than an ordinary 403/404?"""
     try:
-        page.locator("h1").filter(
-            has_text="Rainbow Cuddles Crochet Unicorn Pattern"
-        ).wait_for(timeout=20_000)
-    except PlaywrightTimeoutError as exc:
-        raise RuntimeError(
-            "The article did not load. Cloudflare may still be blocking the page."
-        ) from exc
+        body = page.locator("body").inner_text(timeout=2_000)
+    except Exception:
+        return False
+    head = body[:BLOCK_BODY_PREFIX_CHARS].lower()
+    return any(phrase in head for phrase in BLOCK_BODY_PHRASES)
+
+
+def _wait_out_challenge(page: Page) -> bool:
+    """Give a challenge page up to CHALLENGE_WAIT_MS to clear itself (some
+    JS challenges pass on their own and redirect to the real page). True
+    once the real page is showing."""
+    deadline = time.monotonic() + CHALLENGE_WAIT_MS / 1000
+    while time.monotonic() < deadline:
+        page.wait_for_timeout(1_000)
+        try:
+            if not looks_like_cloudflare_challenge(page):
+                return True
+        except Exception:
+            # The challenge redirecting mid-check destroys the page's JS
+            # context -- just look again next round.
+            continue
+    return False
 
 
 def parse_pattern_html(html: str, source_url: str) -> dict:
@@ -154,22 +196,29 @@ def parse_pattern_html(html: str, source_url: str) -> dict:
     """
     soup = BeautifulSoup(html, "html.parser")
 
+    # Everything that reads the page as-is goes first: _extract_sections
+    # rewrites the content container in place (links become "[text](url)"
+    # markdown, <br>s become newlines -- see _linearize), which would leak
+    # into a linked <h1> or break the "by Jane Doe" byline match.
     site_name, domain = _get_site_name(soup, source_url)
-    materials, abbreviations, instructions = _extract_sections(soup)
+    title = _extract_title(soup)
+    author = _extract_author(soup)
+    photo_url = _extract_image_url(soup, source_url)
+    materials, abbreviations, instructions = _extract_sections(soup, source_url)
 
     return {
-        "title": _extract_title(soup),
-        "author": _extract_author(soup),
+        "title": title,
+        "author": author,
         "materials": materials,
         "abbreviations": abbreviations,
         "instructions": instructions,
         "source_site_name": site_name,
         "source_domain": domain,
-        "photo_url": _extract_image_url(soup, source_url),
+        "photo_url": photo_url,
     }
 
 
-def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
+def parse_pattern_pdf(pdf_bytes: bytes, source_url: str | None) -> dict:
     """
     Heuristically extract a pattern draft from a PDF file's raw bytes.
 
@@ -177,9 +226,12 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
     "never assume this is correct" caveat) -- called from the upload path
     (POST /api/patterns/preview-upload) when the uploaded file is a PDF
     rather than saved HTML, and from the CLI at the bottom of this file.
-    `source_url` is still whatever URL the user typed alongside the
-    upload (a PDF has no notion of "the page it came from" on its own),
-    used the same way for dedup/attribution as the HTML upload path.
+    `source_url` is whatever URL the user typed alongside the upload, or
+    None -- unlike saved HTML, a PDF often has no web page at all (a paid
+    download, a file someone emailed), so the link is optional. When
+    given, it's used the same way for dedup/attribution as the HTML path.
+
+    The author comes from the file itself -- see _pdf_author.
 
     PDFs have no tags, so the two HTML-specific signals _extract_sections
     relies on need PDF equivalents: "is this a heading/bold tag" becomes
@@ -192,8 +244,9 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
     """
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            metadata_title = (pdf.metadata or {}).get("Title")
-            metadata_author = (pdf.metadata or {}).get("Author")
+            metadata = pdf.metadata or {}
+            metadata_title = metadata.get("Title")
+            xmp_creators = _pdf_xmp_creators(pdf)
 
             lines: list[str] = []
             label_texts: set[str] = set()
@@ -222,13 +275,11 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
     else:
         title = "Untitled Pattern"
 
-    author = metadata_author.strip() if metadata_author and metadata_author.strip() else None
-    if not author:
-        author = _find_author_phrase(" ".join(lines))
+    author = _pdf_author(metadata, xmp_creators, lines)
 
     materials, abbreviations, instructions = _classify_lines(lines, label_texts, {title})
 
-    domain = _bare_domain(source_url)
+    domain = _bare_domain(source_url) if source_url else None
 
     return {
         "title": title,
@@ -240,6 +291,204 @@ def parse_pattern_pdf(pdf_bytes: bytes, source_url: str) -> dict:
         "source_domain": domain,
         # PDFs have no og:image equivalent -- always None, never omitted,
         # so both parsers return the same shape.
+        "photo_url": None,
+    }
+
+
+# Author/Creator values that name nobody: what an OS, an office suite or a
+# shared account fills in by default. Compared case-insensitively.
+PDF_PLACEHOLDER_AUTHORS = {
+    "user", "admin", "administrator", "owner", "unknown", "author", "anonymous",
+    "pc", "windows user", "microsoft office user", "microsoft account", "default",
+}
+# A PDF's "Creator" field is meant to be the program that made the
+# original document -- and in practice almost always is ("Microsoft Word",
+# "Canva", "Adobe InDesign 18.0"). Only a value that matches none of these
+# is treated as a person's name.
+#
+# Matched on word boundaries so a surname that merely contains a hint
+# isn't dropped (Rios/Antonios vs "ios", Scanlon vs "scan", Printz vs
+# "print", Wordsworth vs "word", Chromy vs "chrome"):
+#   - brand names need only a boundary in front, because real Creator
+#     strings glue them to more text ("Microsoft365", "pdfTeX-1.40.25",
+#     "PDFium") and no one's name starts with them;
+#   - short or everyday words must match as whole words.
+_PDF_SOFTWARE_BRANDS = (
+    "microsoft", "adobe", "acrobat", "indesign", "illustrator", "photoshop",
+    "powerpoint", "libreoffice", "openoffice", "pdf", "latex", "pdftex",
+    "ghostscript", "mozilla", "firefox", "chromium", "inkscape", "scribus",
+    "canva", "figma", "google", "scansnap", "wkhtmltopdf",
+)
+_PDF_SOFTWARE_WORDS = (
+    "word", "office", "excel", "docs", "pages", "keynote", "writer", "quartz",
+    "tex", "skia", "safari", "chrome", "print", "printer", "printed", "scan",
+    "scanner", "scanned", "ios", "ipados", "macos", "mac os", "os x", "windows",
+    "android", "wps", "affinity", "distiller", "version", "build",
+)
+PDF_SOFTWARE_HINTS = re.compile(
+    r"\b(?:" + "|".join(_PDF_SOFTWARE_BRANDS) + r")"
+    + r"|\b(?:" + "|".join(w.replace(" ", r"\s?") for w in _PDF_SOFTWARE_WORDS) + r")\b"
+    + r"|\bv?\d+(?:\.\d+)+",  # a version number: "18.2", "v1.40.25"
+    re.IGNORECASE,
+)
+
+
+def _pdf_author(metadata: dict, xmp_creators: list[str], lines: list[str]) -> str | None:
+    """
+    The pattern's writer, taken from the PDF itself, best source first:
+      1. the document's Author property,
+      2. its XMP metadata's creator (dc:creator -- where Canva, InDesign
+         and many export tools put the author's name),
+      3. a "by <Name>" / "מאת <name>" byline in the text,
+      4. the Creator property -- only when it isn't the name of a program
+         (see PDF_SOFTWARE_HINTS), which is what it usually holds.
+    Placeholder names ("User", "Microsoft Office User", ...) are skipped
+    at every step. None when nothing names a person: the review form
+    leaves the field blank rather than guessing.
+    """
+    for candidate in [metadata.get("Author"), *xmp_creators]:
+        name = _clean_pdf_name(candidate)
+        if name:
+            return name
+
+    byline = _find_author_phrase("\n".join(lines))
+    if byline:
+        return byline
+
+    creator = _clean_pdf_name(metadata.get("Creator"))
+    if creator and not PDF_SOFTWARE_HINTS.search(creator):
+        return creator
+    return None
+
+
+def _clean_pdf_name(value) -> str | None:
+    """A usable person's name from a PDF metadata value, or None."""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    if not isinstance(value, str):
+        return None
+    name = re.sub(r"\s+", " ", value).strip(" \t;,")
+    if not name or len(name) > 100 or "@" in name:
+        return None
+    if name.lower() in PDF_PLACEHOLDER_AUTHORS:
+        return None
+    return name
+
+
+# XMP packets are a few KB (Adobe pads them to ~2-4 KB; one with an
+# embedded thumbnail can reach tens of KB). Anything bigger isn't worth
+# reading for an author name -- and capping it, before decompressing or
+# parsing, keeps a crafted upload from tying up the request worker.
+XMP_MAX_BYTES = 256 * 1024
+
+
+def _pdf_xmp_creators(pdf) -> list[str]:
+    """The dc:creator entries of a PDF's XMP metadata, in order. Empty if
+    it has none, or if it can't be read safely -- a malformed or hostile
+    metadata stream must never fail (or stall) the whole upload.
+
+    The PDF is user-uploaded, so the stream is treated as hostile:
+      - its size is capped before anything is decoded, and it's
+        decompressed here with a hard output limit (pdfminer's get_data()
+        would inflate a compression bomb in full first);
+      - the XML is parsed with defusedxml with DTDs forbidden, so no
+        entity definition (billion laughs, external entities) is ever
+        expanded.
+    """
+    try:
+        from defusedxml import ElementTree
+        from pdfminer.pdftypes import PDFStream, resolve1
+
+        stream = resolve1(pdf.doc.catalog.get("Metadata"))
+        if not isinstance(stream, PDFStream):
+            return []
+        data = _bounded_stream_bytes(stream, XMP_MAX_BYTES)
+        if data is None:
+            return []
+        root = ElementTree.fromstring(data, forbid_dtd=True)
+        ns = {
+            "dc": "http://purl.org/dc/elements/1.1/",
+            "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+        }
+        return [
+            li.text.strip()
+            for creator in root.iter(f"{{{ns['dc']}}}creator")
+            for li in creator.iter(f"{{{ns['rdf']}}}li")
+            if li.text and li.text.strip()
+        ]
+    except Exception:
+        return []
+
+
+def _bounded_stream_bytes(stream, max_bytes: int) -> bytes | None:
+    """A PDF stream's decoded bytes, or None if it would exceed `max_bytes`
+    (compressed or decompressed) or uses an encoding other than none or
+    plain Flate (zlib) -- the only two an XMP packet uses in practice."""
+    raw = stream.get_rawdata()
+    if raw is None or len(raw) > max_bytes:
+        return None
+    filters = stream.get_filters()
+    if not filters:
+        return raw
+    if len(filters) != 1:
+        return None
+    name, params = filters[0]
+    if getattr(name, "name", name) not in ("FlateDecode", "Fl") or params:
+        return None  # params would mean a PNG/TIFF predictor: not XMP
+    inflater = zlib.decompressobj()
+    data = inflater.decompress(raw, max_bytes + 1)
+    if len(data) > max_bytes or inflater.unconsumed_tail:
+        return None
+    return data
+
+
+MANUAL_SOURCE_PREFIX = "manual:"
+TEXT_HEADING_RE = re.compile(r"^#{1,6}\s+(.+)$")
+
+
+def parse_pattern_text(text: str, source_url: str | None = None) -> dict:
+    """
+    Pattern draft from plain text -- pasted by the user, or transcribed from
+    photos (see transcription.py). Same return shape as parse_pattern_html.
+
+    There's no styling to find part labels by, so a line counts as a label
+    when it's short and either a "# Heading" (what photo transcription
+    emits) or ends with ":" ("Body:"). Not all-caps lines: "DROPS AIR" in a
+    materials list would end the list early.
+    The first line is the title. If nothing at all looks like a section,
+    every remaining line becomes one "Instructions" part, so a plain list of
+    steps still turns into a checklist. `source_url` is optional -- a
+    pattern typed from a book has none (see submit_pattern's manual: URLs).
+    """
+    lines: list[str] = []
+    label_texts: set[str] = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        heading = TEXT_HEADING_RE.match(line)
+        if heading:
+            line = heading.group(1).strip()
+        is_label = len(line) <= MAX_LABEL_LENGTH and (bool(heading) or line.endswith(":"))
+        lines.append(line)
+        if is_label:
+            label_texts.add(line)
+
+    title = lines[0] if lines else "Untitled Pattern"
+    author = _find_author_phrase("\n".join(lines))
+    materials, abbreviations, instructions = _classify_lines(lines, label_texts, {title})
+    if not materials and not abbreviations and not instructions and len(lines) > 1:
+        instructions = {"Instructions": _split_into_steps(lines[1:])}
+
+    domain = _bare_domain(source_url) if source_url else None
+    return {
+        "title": title,
+        "author": author,
+        "materials": materials,
+        "abbreviations": abbreviations,
+        "instructions": instructions,
+        "source_site_name": domain,
+        "source_domain": domain,
         "photo_url": None,
     }
 
@@ -345,23 +594,26 @@ def _fetch_html(url: str, *, allow_file: bool = False) -> str:
             route.continue_() if _is_request_allowed(route.request.url) else route.abort()
         ))
         try:
-            response = page.goto(url, timeout=30_000, wait_until="domcontentloaded")
+            response = page.goto(url, timeout=PAGE_LOAD_TIMEOUT_MS, wait_until="domcontentloaded")
 
+            blocked = ScraperError(
+                f"{url} is protected by a bot-detection service (e.g. Cloudflare) that "
+                "blocks automated fetching. You can try saving the page's HTML "
+                "yourself and using the file upload option instead."
+            )
             if looks_like_cloudflare_challenge(page):
-                wait_for_article(page)
-
-            if response is None or not response.ok:
-                if looks_like_cloudflare_challenge(page):
-                    raise ScraperError(
-                        f"{url} is protected by a bot-detection service (e.g. Cloudflare) that "
-                        "blocks automated fetching. Yarnboard tried to wait for the challenge to "
-                        "complete, but it may have failed or timed out. You can try saving "
-                        "the page's HTML yourself and using the file upload option instead."
-                    )
+                if not _wait_out_challenge(page):
+                    raise blocked
+            elif response is None or not response.ok:
+                # A hard block (no challenge to wait out) fails at once.
+                if _error_page_looks_blocked(page):
+                    raise blocked
                 status = response.status if response else "unknown"
                 raise ScraperError(f"{url} returned HTTP {status}")
 
             content = page.content()
+        except ScraperError:
+            raise
         except PlaywrightTimeoutError as exc:
             raise ScraperError(f"Timed out trying to fetch {url}") from exc
         except Exception as exc:
@@ -422,8 +674,11 @@ def _extract_title(soup: BeautifulSoup) -> str:
         return og_title["content"].strip()
 
     h1 = soup.find("h1")
-    if h1 and h1.get_text(strip=True):
-        return h1.get_text(strip=True)
+    # " " separator: get_text(strip=True) alone would glue "Cozy <a>Beanie</a>"
+    # into "CozyBeanie".
+    h1_text = h1.get_text(" ", strip=True) if h1 else ""
+    if h1_text:
+        return h1_text
 
     if soup.title and soup.title.string:
         return _strip_site_name_suffix(soup.title.string.strip())
@@ -452,7 +707,12 @@ def _extract_author(soup: BeautifulSoup) -> str | None:
     if meta and meta.get("content"):
         return meta["content"].strip()
 
-    return _find_author_phrase(soup.get_text(" ", strip=True))
+    # One line per block element (on a copy -- _linearize edits in place),
+    # so a byline can't run on into the next heading: a flat
+    # get_text(" ") turned "by Jane Doe" + "<h2>Materials" into
+    # "Jane Doe Materials".
+    lines = _linearize(copy.copy(soup.body or soup))
+    return _find_author_phrase("\n".join(lines))
 
 
 def _find_author_phrase(text: str) -> str | None:
@@ -464,7 +724,9 @@ def _find_author_phrase(text: str) -> str | None:
     embedded Author property).
     """
     match = re.search(
-        r"\b(?:designed by|pattern by|written by|by)\s+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){0,2})",
+        # Name words are joined by spaces/tabs only, never a newline -- the
+        # next line is the next block (a heading, a paragraph), not more name.
+        r"\b(?:designed by|pattern by|written by|by)\s+([A-Z][\w'.-]+(?:[ \t]+[A-Z][\w'.-]+){0,2})",
         text[:2000],
     )
     if match:
@@ -481,7 +743,7 @@ def _find_author_phrase(text: str) -> str | None:
     # failure mode rare rather than eliminating a signal we don't have.
     hebrew_match = re.search(
         r"(?:מאת|עיצוב(?: של| על ידי)?|נוצר על ידי)\s*[:\-]?\s*"
-        r"([א-ת]+['׳]?(?:\s+[א-ת]+['׳]?){0,1})",
+        r"([א-ת]+['׳]?(?:[ \t]+[א-ת]+['׳]?){0,1})",
         text[:2000],
     )
     return hebrew_match.group(1).strip() if hebrew_match else None
@@ -546,7 +808,12 @@ def _find_content_container(soup: BeautifulSoup):
     return soup.body or soup
 
 
-def _linearize(container) -> list[str]:
+def _strip_links(line: str) -> str:
+    """A line with any markdown link reduced to just its link text."""
+    return MARKDOWN_LINK_RE.sub(r"\1", line)
+
+
+def _linearize(container, base_url: str | None = None) -> list[str]:
     """
     Flatten `container` into a list of non-empty text lines, one per
     visual line break. <br> tags become newlines directly; other
@@ -557,7 +824,19 @@ def _linearize(container) -> list[str]:
     This works whether a page uses proper <p>/<h2>/<ul><li> structure or
     (very common on older pattern blogs) just flows text and <br> tags
     with the occasional bold <span> as a pseudo-heading.
+
+    With `base_url`, every http(s) <a> becomes inline markdown
+    "[text](absolute-url)" so a materials line like "Yarn: Drops Air" keeps
+    the shop link the source page had on it. _classify_lines matches
+    keywords/labels against the link-stripped text and only lets
+    materials keep the markdown.
     """
+    if base_url:
+        for a in container.find_all("a", href=True):
+            href = urljoin(base_url, a["href"].strip())
+            text = a.get_text(" ", strip=True).replace("[", "(").replace("]", ")")
+            if text and urlparse(href).scheme in ("http", "https") and not re.search(r"[\s)]", href):
+                a.replace_with(f"[{text}]({href})")
     for br in container.find_all("br"):
         br.replace_with("\n")
     for tag in container.find_all(BLOCK_LEVEL_TAGS):
@@ -567,7 +846,7 @@ def _linearize(container) -> list[str]:
     return [line.strip() for line in raw.split("\n") if line.strip()]
 
 
-def _extract_sections(soup: BeautifulSoup) -> tuple[str, str, dict]:
+def _extract_sections(soup: BeautifulSoup, source_url: str | None = None) -> tuple[str, str, dict]:
     """
     HTML front-end for _classify_lines: finds the real content container,
     collects "label" tag texts (headings + bold-styled short tags) and the
@@ -585,7 +864,7 @@ def _extract_sections(soup: BeautifulSoup) -> tuple[str, str, dict]:
     label_texts = {tag.get_text(strip=True) for tag in container.find_all(_is_label_tag)}
     title_lines = {tag.get_text(strip=True) for tag in container.find_all("h1")}
 
-    lines = _linearize(container)
+    lines = _linearize(container, source_url)
 
     return _classify_lines(lines, label_texts, title_lines)
 
@@ -650,7 +929,10 @@ def _classify_lines(
             parts.setdefault(state[1], [])
             parts[state[1]].extend(_split_into_steps(current_lines))
 
-    for line in lines:
+    for raw_line in lines:
+        # Matching (and every section but materials) uses the link-free
+        # text -- a URL could otherwise contain a keyword like "pattern".
+        line = _strip_links(raw_line)
         if line in excluded_lines:
             continue
 
@@ -681,7 +963,9 @@ def _classify_lines(
             state = ("part", line.rstrip(":").strip() or f"Part {len(parts) + 1}")
             continue
 
-        if state is not None:
+        if state == "materials":
+            current_lines.append(raw_line)
+        elif state is not None:
             current_lines.append(line)
 
     flush()

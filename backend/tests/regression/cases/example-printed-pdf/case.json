@@ -1,0 +1,15 @@
+{
+  "description": "Example case (format reference): the same blog post printed to PDF. Shows partial checks: only what matters for this pattern, so harmless wording changes elsewhere don't fail it.",
+  "kind": "pdf",
+  "source_url": "https://woolyblog.example.com/mock-pattern",
+  "expect": {
+    "title": { "contains": "Cozy Beanie" },
+    "materials": { "contains": ["worsted weight yarn", "4.5mm circular needles"] },
+    "abbreviations": { "present": true, "not_contains": "Cast on" },
+    "instructions": {
+      "parts": ["Part 1: Brim", "Part 2: Body"],
+      "step_count": { "Part 1: Brim": 2 },
+      "step_contains": { "Part 2: Body": "6 inches" }
+    }
+  }
+}
