@@ -245,3 +245,6 @@ frontend/visual-new-baselines.txt
 # by `record.py show --draft`, for comparing with case.json -- not inputs.
 backend/tests/regression/cases/*/actual*.json
 backend/tests/regression/cases/*/expect.draft.json
+
+# Skills particular to project and such, just for me
+SKILL.md
