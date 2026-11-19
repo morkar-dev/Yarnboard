@@ -84,6 +84,11 @@ export default function NavBar() {
                   <NavDropdown.Item as={Link} to="/settings/notifications">
                     {t("nav.notificationSettings")}
                   </NavDropdown.Item>
+                  {user.is_admin && (
+                    <NavDropdown.Item as={Link} to="/admin/newsletter">
+                      {t("nav.newsletter")}
+                    </NavDropdown.Item>
+                  )}
                   <NavDropdown.Divider />
                   <NavDropdown.Item onClick={handleLogout}>{t("nav.logout")}</NavDropdown.Item>
                 </NavDropdown>

@@ -24,7 +24,8 @@
     "language": "עברית",
     "searchPlaceholder": "Search patterns...",
     "searchSubmit": "Search",
-    "searchOpen": "Open search"
+    "searchOpen": "Open search",
+    "newsletter": "Send newsletter"
   },
   "home": {
     "welcome": "Welcome",
@@ -135,6 +136,10 @@
         "label": "Pattern shared with you",
         "description": "Someone gave you access to one of their patterns."
       }
+    },
+    "newsletter": {
+      "label": "Product updates",
+      "description": "An occasional email about new Yarnboard features. Off unless you turn it on."
     }
   },
   "submit": {
@@ -375,6 +380,44 @@
     "invalid_photo": "One of those files isn't a photo we can read.",
     "photo_read_error": "We couldn't read those photos right now. Please try again in a moment.",
     "translation_error": "We couldn't translate this pattern right now. Please try again in a moment.",
-    "photo_no_text": "We couldn't find pattern text in those photos. Try clearer, closer photos."
+    "photo_no_text": "We couldn't find pattern text in those photos. Try clearer, closer photos.",
+    "newsletter_empty": "Write a subject and a message first.",
+    "newsletter_too_long": "That's too long. Keep the subject under 150 characters and the message under 20,000.",
+    "subscriber_count_changed": "The number of subscribers changed to {{subscriber_count}}. Check it and confirm again.",
+    "no_subscribers": "Nobody has turned on product updates yet.",
+    "newsletter_send_failed": "Sending failed. Check the server log before trying again, so nobody gets it twice.",
+    "invalid_unsubscribe_token": "This unsubscribe link isn't valid. Log in and turn off product updates in Notification settings.",
+    "forbidden": "You don't have permission to do that."
+  },
+  "unsubscribe": {
+    "title": "Unsubscribe",
+    "working": "Unsubscribing…",
+    "done": "You're unsubscribed. You won't get product update emails anymore.",
+    "missingToken": "This link is incomplete. Log in and turn off product updates in Notification settings.",
+    "failed": "Couldn't unsubscribe you. Log in and turn off product updates in Notification settings.",
+    "settingsLink": "Notification settings"
+  },
+  "newsletter": {
+    "title": "Newsletter",
+    "intro": "Write a product update for everyone who turned on product update emails.",
+    "subscribers_one": "{{count}} subscriber",
+    "subscribers_other": "{{count}} subscribers",
+    "subject": "Subject",
+    "body": "Message",
+    "bodyHelp": "Plain text. A blank line starts a new paragraph; links starting with https:// become clickable. An unsubscribe link is added at the bottom.",
+    "preview": "Preview",
+    "previewTitle": "Preview",
+    "sendTest": "Send a test to me",
+    "testSent": "Test sent to {{email}}.",
+    "send": "Send to subscribers",
+    "confirm_one": "Send “{{subject}}” to {{count}} subscriber? This can't be undone.",
+    "confirm_other": "Send “{{subject}}” to {{count}} subscribers? This can't be undone.",
+    "confirmSend": "Yes, send it",
+    "cancel": "Cancel",
+    "sent_one": "Sent to {{count}} subscriber.",
+    "sent_other": "Sent to {{count}} subscribers.",
+    "noSubscribers": "Nobody has turned on product updates yet, so there's no one to send to.",
+    "failed": "That didn't work. Try again in a moment.",
+    "adminOnly": "Only admins can send newsletters."
   }
 }
