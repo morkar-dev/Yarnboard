@@ -11,8 +11,8 @@ so each can be revoked/rate-limited/monitored independently):
   - RESEND_ONBOARDING: account-lifecycle emails (send_verification_email).
   - RESEND_NOTIFICATIONS: activity emails about a pattern
     (send_pattern_updated_email, send_pattern_shared_email).
-  - RESEND_NEWSLETTER: reserved for a future newsletter feature -- no
-    sender uses it yet, since no newsletter content/trigger exists.
+  - RESEND_NEWSLETTER: product-update newsletters an admin sends to
+    opted-in users (send_newsletter_batch; see newsletter/routes.py).
 If a given category's key isn't set, sends in that category are logged
 instead of actually delivered -- the same graceful-fallback spirit as
 DATABASE_URL defaulting to local SQLite when unset, so local dev/testing
@@ -21,11 +21,15 @@ never needs real Resend keys.
 
 import html
 import os
+import re
 
 import requests
 from flask import current_app
 
 RESEND_API_URL = "https://api.resend.com/emails"
+RESEND_BATCH_URL = "https://api.resend.com/emails/batch"
+# Resend's batch endpoint takes at most 100 emails per call.
+RESEND_BATCH_SIZE = 100
 REQUEST_TIMEOUT_SECONDS = 10
 
 
@@ -137,3 +141,90 @@ def send_pattern_shared_email(to_email: str, sharer_username: str, pattern) -> N
     )
 
     _deliver("RESEND_NOTIFICATIONS", to_email, subject, html_body)
+
+
+_URL_RE = re.compile(r"https?://[^\s<>\"']+")
+
+
+def render_newsletter_body(body: str) -> str:
+    """The admin's plain-text newsletter as safe HTML: everything escaped,
+    blank lines start a new paragraph, single line breaks stay, and
+    http(s) links become clickable. The same function renders the admin
+    page's preview, so what they see is what subscribers get."""
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", body.strip()) if p.strip()]
+    rendered = []
+    for paragraph in paragraphs:
+        escaped = html.escape(paragraph)
+        linked = _URL_RE.sub(lambda m: f'<a href="{m.group(0)}">{m.group(0)}</a>', escaped)
+        rendered.append("<p>" + linked.replace("\n", "<br>") + "</p>")
+    return "\n".join(rendered)
+
+
+def newsletter_html(body: str, unsubscribe_url: str) -> str:
+    return (
+        render_newsletter_body(body)
+        + '<hr style="border:none;border-top:1px solid #ddd;margin:24px 0">'
+        + '<p style="color:#777;font-size:12px">You get this because you turned on '
+        + "product update emails in your Yarnboard notification settings. "
+        + f'<a href="{html.escape(unsubscribe_url)}">Unsubscribe</a></p>'
+    )
+
+
+def newsletter_unsubscribe_urls(token: str) -> tuple[str, str]:
+    """(page link for the footer, API link for the List-Unsubscribe
+    header). Mail apps' one-click unsubscribe POSTs straight to the
+    header link, so it must be the API; a person clicking the footer
+    link gets the page, which confirms and calls the same API."""
+    app_url = os.environ.get("PUBLIC_APP_URL", "http://localhost:5173")
+    return (
+        f"{app_url}/unsubscribe?token={token}",
+        f"{app_url}/api/newsletter/unsubscribe?token={token}",
+    )
+
+
+def send_newsletter_batch(subject: str, body: str, recipients: list[tuple[str, str]]) -> int:
+    """
+    Send one newsletter to `recipients`, a list of (email, unsubscribe
+    token). Each email carries its own unsubscribe link, in the footer and
+    as a List-Unsubscribe header (one-click unsubscribe in mail apps). Sent
+    through Resend's batch endpoint, 100 per call. Returns how many were
+    handed to Resend (or logged, when RESEND_NEWSLETTER isn't set). Raises
+    requests.RequestException if a batch call fails; batches before it
+    were already sent.
+    """
+    api_key = os.environ.get("RESEND_NEWSLETTER")
+    from_email = os.environ.get("RESEND_FROM_EMAIL", "Yarnboard <notifications@yarnboard.app>")
+
+    if not api_key:
+        current_app.logger.warning(
+            "RESEND_NEWSLETTER not set -- would send newsletter %r to %d recipient(s)",
+            subject, len(recipients),
+        )
+        return len(recipients)
+
+    sent = 0
+    for start in range(0, len(recipients), RESEND_BATCH_SIZE):
+        chunk = recipients[start:start + RESEND_BATCH_SIZE]
+        response = requests.post(
+            RESEND_BATCH_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json=[
+                {
+                    "from": from_email,
+                    "to": [email],
+                    "subject": subject,
+                    "html": newsletter_html(body, page_url),
+                    "headers": {
+                        "List-Unsubscribe": f"<{api_url}>",
+                        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                    },
+                }
+                for email, (page_url, api_url) in (
+                    (email, newsletter_unsubscribe_urls(token)) for email, token in chunk
+                )
+            ],
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        sent += len(chunk)
+    return sent

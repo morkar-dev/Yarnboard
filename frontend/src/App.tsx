@@ -11,6 +11,8 @@ import LoginPage from "./pages/LoginPage";
 import MySavedPage from "./pages/MySavedPage";
 import MyUploadsPage from "./pages/MyUploadsPage";
 import NotificationSettingsPage from "./pages/NotificationSettingsPage";
+import AdminNewsletterPage from "./pages/AdminNewsletterPage";
+import UnsubscribePage from "./pages/UnsubscribePage";
 import PatternDetailPage from "./pages/PatternDetailPage";
 import RegisterPage from "./pages/RegisterPage";
 import ReviewPatternPage from "./pages/ReviewPatternPage";
@@ -91,6 +93,15 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/admin/newsletter"
+            element={
+              <ProtectedRoute>
+                <AdminNewsletterPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/unsubscribe" element={<UnsubscribePage />} />
         </Routes>
       </Container>
       <Footer />

@@ -1,0 +1,117 @@
+name: Smoke
+
+# Smoke tests against the deployed sites (frontend/e2e-smoke/, see the
+# README's "Smoke tests against the deployed sites"): health settings,
+# opening a pattern logged in, pasted text, a real Gemini photo read and
+# translation, all through the Cloudflare Worker like a real visitor.
+#
+#   - Push to dev / main: the dev / prod site, 10 minutes later (time for
+#     Render and Cloudflare to deploy).
+#   - Every day at 06:00 UTC: both sites.
+#   - Actions tab > Smoke > Run workflow: pick dev, prod or both.
+#
+# Needs repository secrets SMOKE_DEV_EMAIL, SMOKE_DEV_PASSWORD,
+# SMOKE_PROD_EMAIL, SMOKE_PROD_PASSWORD, and the repository variable
+# SMOKE_PROD_URL (SMOKE_DEV_URL optional).
+
+on:
+  push:
+    branches: [main, dev]
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which site to test
+        type: choice
+        options: [dev, prod, both]
+        default: dev
+
+jobs:
+  smoke-dev:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'push' && github.ref_name == 'dev') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'dev' || inputs.target == 'both'))
+    runs-on: ubuntu-latest
+    # Must match the installed @playwright/test version (package-lock.json).
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
+    concurrency:
+      group: smoke-dev
+      cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      HOME: /root
+      SMOKE_BASE_URL: ${{ vars.SMOKE_DEV_URL || 'https://yarnboard-dev.morkar9696.workers.dev' }}
+      SMOKE_EMAIL: ${{ secrets.SMOKE_DEV_EMAIL }}
+      SMOKE_PASSWORD: ${{ secrets.SMOKE_DEV_PASSWORD }}
+      SMOKE_REQUIRE: gemini,proxy_secret,proxy_verified
+    steps:
+      - name: Check settings
+        run: |
+          for name in SMOKE_BASE_URL SMOKE_EMAIL SMOKE_PASSWORD; do
+            if [ -z "$(printenv "$name")" ]; then
+              echo "::error::$name is empty for dev. Add the SMOKE_* secrets/variables in Settings > Secrets and variables > Actions."
+              exit 1
+            fi
+          done
+        working-directory: .
+      - name: Wait for the deploy
+        if: github.event_name == 'push'
+        run: sleep 600
+        working-directory: .
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run test:smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-dev
+          path: frontend/smoke-results/
+          retention-days: 14
+
+  smoke-prod:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'push' && github.ref_name == 'main') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target == 'prod' || inputs.target == 'both'))
+    runs-on: ubuntu-latest
+    # Must match the installed @playwright/test version (package-lock.json).
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
+    concurrency:
+      group: smoke-prod
+      cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      HOME: /root
+      SMOKE_BASE_URL: ${{ vars.SMOKE_PROD_URL }}
+      SMOKE_EMAIL: ${{ secrets.SMOKE_PROD_EMAIL }}
+      SMOKE_PASSWORD: ${{ secrets.SMOKE_PROD_PASSWORD }}
+      SMOKE_REQUIRE: gemini,email_onboarding,email_notifications,proxy_secret,proxy_verified
+    steps:
+      - name: Check settings
+        run: |
+          for name in SMOKE_BASE_URL SMOKE_EMAIL SMOKE_PASSWORD; do
+            if [ -z "$(printenv "$name")" ]; then
+              echo "::error::$name is empty for prod. Add the SMOKE_* secrets/variables in Settings > Secrets and variables > Actions."
+              exit 1
+            fi
+          done
+        working-directory: .
+      - name: Wait for the deploy
+        if: github.event_name == 'push'
+        run: sleep 600
+        working-directory: .
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run test:smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-prod
+          path: frontend/smoke-results/
+          retention-days: 14

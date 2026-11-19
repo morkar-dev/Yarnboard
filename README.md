@@ -241,20 +241,37 @@ the next run compares against them. That's also how to accept an
 intended UI change on Linux: delete the affected PNGs and let CI write
 fresh ones.
 
+## Newsletter
+
+Users opt in to product update emails in **Notification settings**; it's
+off by default (marketing email needs prior consent). An admin writes and
+sends a newsletter from the account menu's **Send newsletter** page
+(`/admin/newsletter`): plain text, a preview, a test send to yourself,
+then a send to every verified subscriber after an in-page confirmation of
+the subject and subscriber count. Each email has an unsubscribe link and
+a one-click `List-Unsubscribe` header that work without logging in
+(`/unsubscribe`, `POST /api/newsletter/unsubscribe`). Sends go through
+Resend's batch API with `RESEND_NEWSLETTER`; they aren't stored, only
+logged. Unsubscribe links are signed with `SECRET_KEY`, so rotating it
+invalidates links in emails already sent (people can still turn it off in
+settings).
+
 ## GitLab CI
 
-`.gitlab-ci.yml` runs the checks; results show on each merge request, in
-the pipeline's **Tests** tab, and GitLab emails you when a pipeline fails.
+The repository lives on GitHub (`morkar-dev/Yarnboard`); `.github/workflows/`
+runs the checks, and results show on each pull request and in the
+**Actions** tab (download a run's artifacts for test reports, screenshots
+and logs). GitHub emails you when a run fails.
 
 | When | What runs |
 | --- | --- |
-| Merge request | backend tests, frontend type check + tests, production build, e2e suite, dependency audits; smoke tests as manual buttons |
-| Push to `dev` | smoke test of the dev site, 10 minutes later (time to deploy) |
-| Push to `main` | all the tests, then a smoke test of the prod site 10 minutes later |
-| Schedule | dependency audits + smoke tests (`SMOKE_TARGET` = `dev`, `prod` or `dev prod`) |
+| Pull request, push to `main` | `ci.yml`: backend tests, frontend type check + unit tests, Storybook interaction/accessibility/screenshot tests, production build, e2e suite; `security.yml`: dependency audits |
+| Push to `dev` / `main` | `smoke.yml`: smoke test of the dev / prod site, 10 minutes later (time to deploy) |
+| Daily, 06:00 UTC | `smoke.yml`: both sites. `security.yml` also runs weekly |
+| Actions tab > Smoke > Run workflow | `smoke.yml` for dev, prod or both |
 
-`.github/workflows/` is the older GitHub Actions version of the same
-checks; it only ran on the old GitHub remote.
+`.gitlab-ci.yml` is the same pipeline for GitLab, kept from when the
+repository was hosted there.
 
 ### Smoke tests against the deployed sites
 
@@ -276,16 +293,12 @@ One-time setup:
 
 1. On each site, register a normal (non-admin) account just for this,
    with its own strong password, and verify its email.
-2. In GitLab: **Settings > CI/CD > Variables**, add (mark the passwords
-   **Masked**; mark them **Protected** only if `dev` and `main` are
-   protected branches, or the smoke jobs won't see them):
-   - `SMOKE_DEV_EMAIL`, `SMOKE_DEV_PASSWORD`
-   - `SMOKE_PROD_URL` (the prod site's address), `SMOKE_PROD_EMAIL`,
+2. In GitHub: **Settings > Secrets and variables > Actions**, add
+   - secrets `SMOKE_DEV_EMAIL`, `SMOKE_DEV_PASSWORD`, `SMOKE_PROD_EMAIL`,
      `SMOKE_PROD_PASSWORD`
-   - optionally `SMOKE_DEV_URL`, if the dev site moves from
+   - the variable `SMOKE_PROD_URL` (the prod site's address), and
+     optionally `SMOKE_DEV_URL`, if the dev site moves from
      `https://yarnboard-dev.morkar9696.workers.dev`
-3. In **Build > Pipeline schedules**, add a daily schedule on `dev` with
-   the variable `SMOKE_TARGET` = `dev prod`.
 
 To run it by hand, put `SMOKE_BASE_URL`, `SMOKE_EMAIL` and
 `SMOKE_PASSWORD` in `frontend/e2e-smoke/.env` (git-ignored) and run
@@ -314,8 +327,8 @@ frontend/backend services) -- Flask serves the built React app itself.
    `RESEND_NEWSLETTER`/`RESEND_FROM_EMAIL` (from
    [resend.com](https://resend.com) -- one API key per email category,
    see `app/email.py`; a category's emails are just logged instead of
-   sent if its key is left unset, and `RESEND_NEWSLETTER` isn't used by
-   any sender yet). Update
+   sent if its key is left unset; `RESEND_NEWSLETTER` sends the product
+   update newsletter, see below). Update
    `PUBLIC_APP_URL` to match this service's actual Render URL (used to
    build links in emails). Don't set `VITE_API_BASE_URL` -- leaving it
    unset is what makes the built frontend call the API with relative,
