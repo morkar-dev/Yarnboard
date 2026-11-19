@@ -2,8 +2,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Smoke tests against a *deployed* site (dev or prod), run by GitLab CI
- * (see .gitlab-ci.yml's smoke jobs) or by hand. Unlike frontend/e2e-dev/,
+ * Smoke tests against a *deployed* site (dev or prod), run by GitHub Actions
+ * (see .github/workflows/smoke.yml) or by hand. Unlike frontend/e2e-dev/,
  * this needs no database access: it logs into one long-lived test
  * account whose login comes from CI variables, and only ever creates a
  * single reusable private pattern in it.
@@ -25,7 +25,7 @@ function required(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(
-      `${name} is not set. In GitLab: Settings > CI/CD > Variables. ` +
+      `${name} is not set. In GitHub: Settings > Secrets and variables > Actions. ` +
         `By hand: put it in frontend/e2e-smoke/.env.`,
     );
   }
