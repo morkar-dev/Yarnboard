@@ -148,4 +148,19 @@ describe("PatternChecklist step conventions", () => {
     expect(screen.getByText(/0 \/ 3 rows/)).toBeInTheDocument();
     await waitFor(() => expect(clearSpy).toHaveBeenCalledWith(7));
   });
+
+  it("puts the row counters back too when clearing fails", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(api, "clearProgress").mockRejectedValue(new Error("network"));
+    render(<PatternChecklist patternId={7} instructions={formatted} />);
+    fireEvent.click(screen.getByRole("button", { name: /one row done/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: /clear all checks/i }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByText(/1 \/ 3 rows/)).toBeInTheDocument();
+    // Saved for the next visit as well, not only on screen.
+    render(<PatternChecklist patternId={7} instructions={formatted} />);
+    expect(screen.getAllByText(/1 \/ 3 rows/)).toHaveLength(2);
+  });
 });

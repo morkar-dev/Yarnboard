@@ -50,6 +50,15 @@ describe("AttributionTag", () => {
     expect(screen.getByRole("link", { name: "the original site" })).toBeInTheDocument();
   });
 
+  it("never renders a non-http source as a link", () => {
+    render(
+      <AttributionTag pattern={{ ...basePattern, original_url: "javascript:alert(1)" }} />,
+    );
+
+    expect(screen.getByText("Wooly Blog")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
   it("has no source link for a pattern added from text or photos", () => {
     render(
       <AttributionTag
