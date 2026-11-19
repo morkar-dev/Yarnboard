@@ -222,6 +222,7 @@ package.json
 
 # gitlab ssh key
 .ssh/
+.config/
 
 # Lighthouse reports (frontend/audit-report.report.*) -- generated output.
 frontend/audit-report.report.*
