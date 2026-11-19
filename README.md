@@ -58,8 +58,11 @@ hot-reload -- see Local setup below.
 - **Translation & RTL**: a pattern can be machine-translated in either
   direction -- an English-primary pattern gets a Hebrew overlay, or a
   Hebrew-primary one gets an English overlay -- via the Gemini API
-  (`backend/app/translation.py`, requires `GEMINI_API_KEY`). A
-  translation is reviewable/correctable on the pattern's Edit page and
+  (`backend/app/translation.py`, requires `GEMINI_API_KEY`). When the
+  main model (`gemini-flash-latest`) is overloaded, rate-limited or too
+  slow, the same request is retried on `gemini-flash-lite-latest`; set
+  `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` on a service to change either
+  without a code change. A translation is reviewable/correctable on the pattern's Edit page and
   marked reviewed once a person touches it. Content fields throughout the
   app use `dir="auto"` so right-to-left text displays correctly
   regardless of which language the UI chrome itself is in.
