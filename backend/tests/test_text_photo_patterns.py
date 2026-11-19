@@ -241,6 +241,26 @@ def test_submit_with_a_url_still_has_a_source_link(client):
     assert pattern["has_source_link"] is True
 
 
+@pytest.mark.parametrize("bad_url", [
+    "javascript:alert(document.cookie)",
+    "JavaScript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "manual:00000000-0000-0000-0000-000000000000",
+    "example.com/hat",
+])
+def test_submit_rejects_a_source_link_that_isnt_http(client, bad_url):
+    """The pattern page renders original_url as a link, so only http(s)
+    may be stored -- and a user-supplied "manual:" value must not pass for
+    the no-source placeholder."""
+    _register_and_login(client)
+    resp = client.post(
+        "/api/patterns/submit",
+        json={"original_url": bad_url, "title": "Hat", "instructions": {}},
+    )
+    assert resp.status_code == 400
+    assert resp.get_json()["code"] == "invalid_source_url"
+
+
 def test_submit_still_requires_a_title(client):
     _register_and_login(client)
     resp = client.post("/api/patterns/submit", json={"original_url": "", "title": " "})

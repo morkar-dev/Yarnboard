@@ -491,7 +491,7 @@ def submit_pattern():
       201:
         description: Pattern saved (private)
       400:
-        description: original_url or title missing
+        description: title missing, or original_url not http(s)
       401:
         description: Not logged in
       409:
@@ -502,7 +502,13 @@ def submit_pattern():
         return error
 
     data = request.get_json(silent=True) or {}
-    original_url = (data.get("original_url") or "").strip()
+    # Same rule as the preview routes: blank or http(s) only. This is the
+    # route that stores the value, and the pattern page renders it as a
+    # link -- a javascript: URL would run in the viewer's browser, and a
+    # "manual:" value would pass for our own no-source placeholder.
+    original_url, url_error = _optional_source_url(data.get("original_url"))
+    if url_error:
+        return url_error
     title = (data.get("title") or "").strip()
     if not title:
         return jsonify({

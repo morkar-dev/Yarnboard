@@ -7,6 +7,13 @@
 import { useTranslation } from "react-i18next";
 import type { Pattern } from "../types/models";
 
+/** Only http(s) links are rendered as links: anything else stored as a
+ * pattern's source (a javascript: URL saved before the backend checked)
+ * would run in the viewer's browser when clicked. */
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
+}
+
 export default function AttributionTag({ pattern }: { pattern: Pattern }) {
   const { t } = useTranslation();
   const originalSite =
@@ -22,14 +29,18 @@ export default function AttributionTag({ pattern }: { pattern: Pattern }) {
           {t("attribution.originalByOn")}{" "}
           <strong className="text-body" dir="auto">{pattern.author || t("attribution.unknownAuthor")}</strong>{" "}
           {t("attribution.on")}{" "}
-          <a
-            href={pattern.original_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="link-primary"
-          >
-            {originalSite}
-          </a>
+          {isHttpUrl(pattern.original_url) ? (
+            <a
+              href={pattern.original_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="link-primary"
+            >
+              {originalSite}
+            </a>
+          ) : (
+            <span>{originalSite}</span>
+          )}
         </span>
       ) : (
         // Pasted text / photos with no source link: there's no page to

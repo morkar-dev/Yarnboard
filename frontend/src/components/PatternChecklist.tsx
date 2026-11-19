@@ -134,6 +134,7 @@ export default function PatternChecklist({ patternId, instructions, instructions
     if (!window.confirm(t("checklist.clearAllConfirm"))) return;
     setClearError(null);
     const previous = localInstructions;
+    const previousCounts = rowCounts;
     setLocalInstructions((prev) =>
       Object.fromEntries(Object.entries(prev).map(([part, steps]) => [part, steps.map((s) => ({ ...s, completed: false }))])),
     );
@@ -148,7 +149,11 @@ export default function PatternChecklist({ patternId, instructions, instructions
       await clearProgress(patternId);
     } catch {
       // Same rule as handleToggle: never show a state that isn't saved.
+      // The row counters were zeroed above too, so put them back with
+      // the checks.
       setLocalInstructions(previous);
+      setRowCountsState(previousCounts);
+      setRowCounts(patternId, previousCounts);
       setClearError(t("checklist.clearAllFailed"));
     } finally {
       setClearing(false);

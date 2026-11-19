@@ -35,13 +35,6 @@ def proxy_secret_matches() -> bool:
     )
 
 
-# In-memory storage (the default) is fine for this app's single-service,
-# low-traffic deployment -- it resets on restart and isn't shared across
-# worker processes, which is an acceptable tradeoff here since the goal is
-# blunting casual brute-force/credential-stuffing/email-bombing attempts,
-# not perfect enforcement. Default limits are applied per-route below
-# (see auth/routes.py) rather than globally, since most routes don't need
-# throttling as tightly as login/register do.
 def client_ip() -> str:
     """
     The visitor's real IP, for per-IP rate limiting. In production every
@@ -70,4 +63,11 @@ def client_ip() -> str:
     return request.remote_addr or "127.0.0.1"
 
 
+# In-memory storage (the default) is fine for this app's single-service,
+# low-traffic deployment -- it resets on restart and isn't shared across
+# worker processes, which is an acceptable tradeoff here since the goal is
+# blunting casual brute-force/credential-stuffing/email-bombing attempts,
+# not perfect enforcement. Default limits are applied per-route
+# (see auth/routes.py) rather than globally, since most routes don't need
+# throttling as tightly as login/register do.
 limiter = Limiter(key_func=client_ip)

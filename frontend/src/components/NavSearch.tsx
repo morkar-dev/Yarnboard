@@ -46,7 +46,16 @@ export default function NavSearch() {
   }
 
   return (
-    <Form role="search" onSubmit={handleSubmit} className={`nav-search d-flex flex-row align-items-center ${open ? "open" : ""}`}>
+    <Form
+      role="search"
+      onSubmit={handleSubmit}
+      // Collapse only when focus leaves the whole form: Tab from the input
+      // to the submit button must keep the box open for keyboard users.
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+      className={`nav-search d-flex flex-row align-items-center ${open ? "open" : ""}`}
+    >
       {open && (
         <Form.Control
           ref={inputRef}
@@ -58,7 +67,6 @@ export default function NavSearch() {
           onKeyDown={(e) => {
             if (e.key === "Escape") setOpen(false);
           }}
-          onBlur={() => setOpen(false)}
           placeholder={t("nav.searchPlaceholder")}
           aria-label={t("nav.searchPlaceholder")}
         />
