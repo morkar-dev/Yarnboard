@@ -1,9 +1,19 @@
 name: CI
 
+# Same checks as .gitlab-ci.yml: backend tests, frontend type check + unit
+# tests, Storybook interaction/accessibility/screenshot tests, a production
+# build and the end-to-end suite. Smoke tests of the deployed sites are in
+# smoke.yml; dependency audits in security.yml.
+
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend-tests:
@@ -19,7 +29,13 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements*.txt
       - run: pip install -r requirements.txt -r requirements-dev.txt
-      - run: pytest
+      - run: pytest --junitxml=junit.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-junit
+          path: backend/junit.xml
+          retention-days: 7
 
   frontend-checks:
     runs-on: ubuntu-latest
@@ -35,7 +51,64 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npx tsc -b
-      - run: npm run test
+      # Unit tests only -- the Storybook project needs a real browser, see
+      # frontend-stories below.
+      - run: npx vitest run --project=unit --reporter=default --reporter=junit --outputFile.junit=junit.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-junit
+          path: frontend/junit.xml
+          retention-days: 7
+
+  # Every Storybook story rendered in real Chromium against a fake API
+  # (MSW): interaction tests + an axe scan per story, then a screenshot of
+  # each story in English and Hebrew compared with
+  # frontend/visual/__screenshots__/linux/. Runs in Playwright's own image,
+  # the one the Linux baselines were made in -- a plain runner renders
+  # fonts differently and every screenshot would differ.
+  #
+  # Baselines are strict: if a run had to write a Linux baseline that isn't
+  # committed yet, the job fails and lists them. The new PNGs are in the
+  # "visual" artifact: review them, commit them, and the next run compares
+  # against them.
+  frontend-stories:
+    runs-on: ubuntu-latest
+    # Must match the installed @playwright/test version (package-lock.json).
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      HOME: /root
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npx vitest run --project=storybook --reporter=default --reporter=junit --outputFile.junit=stories-junit.xml
+      - run: npm run build-storybook
+      - name: Compare screenshots
+        run: |
+          mkdir -p visual/__screenshots__/linux
+          find visual/__screenshots__/linux -name '*.png' | sort > /tmp/baselines-before.txt
+          npm run test:visual
+          find visual/__screenshots__/linux -name '*.png' | sort > /tmp/baselines-after.txt
+          comm -13 /tmp/baselines-before.txt /tmp/baselines-after.txt > visual-new-baselines.txt
+          if [ -s visual-new-baselines.txt ]; then
+            echo "$(wc -l < visual-new-baselines.txt) screenshot baseline(s) were missing for Linux and have been written:"
+            cat visual-new-baselines.txt
+            echo "Download them from this run's \"visual\" artifact, review and commit them."
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual
+          path: |
+            frontend/visual-report/
+            frontend/visual/__screenshots__/linux/
+            frontend/visual-new-baselines.txt
+            frontend/stories-junit.xml
+          retention-days: 14
 
   build-check:
     runs-on: ubuntu-latest
@@ -48,9 +121,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      # Mirrors render.yaml's buildCommand exactly, so a broken production
-      # build is caught here rather than at deploy time. Keep in sync with
-      # that file if it ever changes.
+      # Mirrors render.yaml's buildCommand, so a broken production build is
+      # caught here rather than at deploy time. Keep the two in sync.
       - run: cd backend && pip install -r requirements.txt && cd ../frontend && npm install && npm run build
 
   e2e:
@@ -61,18 +133,15 @@ jobs:
       FLASK_ENV: development
       CORS_ORIGINS: http://localhost:5173
       VITE_API_BASE_URL: http://localhost:5001
-      # Explicitly blank, not just unset -- see Makefile's `e2e` target for
-      # why this matters for notifications.spec.ts's deterministic
-      # log-fallback assertion.
+      # Explicitly blank, not just unset -- see the Makefile's `e2e` target
+      # (notifications.spec.ts relies on the log-instead-of-send fallback).
       RESEND_ONBOARDING: ""
       RESEND_NOTIFICATIONS: ""
       RESEND_NEWSLETTER: ""
       GEMINI_API_KEY: ""
-      # frontend/e2e/fixtures.ts's readVerifyToken defaults to
-      # backend/.venv/bin/flask (local dev, see Makefile) -- there's no
-      # venv here, pip installs straight into the runner's system Python
-      # and `flask` ends up directly on PATH.
+      # No venv here: pip installs into the runner's Python, so `flask` is on PATH.
       E2E_FLASK_BIN: flask
+      PLAYWRIGHT_JUNIT_OUTPUT_NAME: junit.xml
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -87,36 +156,27 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: pip install -r requirements.txt -r requirements-dev.txt
         working-directory: backend
-      - run: npm ci
-        working-directory: frontend
-      - run: npx playwright install --with-deps chromium
+      - run: npm ci && npx playwright install --with-deps chromium
         working-directory: frontend
       - run: flask --app wsgi seed-e2e
         working-directory: backend
-      - name: Start backend
-        run: nohup flask --app wsgi run --port 5001 > ../backend.log 2>&1 &
-        working-directory: backend
-      - name: Start frontend
-        run: nohup npm run dev > ../frontend.log 2>&1 &
+      - name: Start servers
+        run: |
+          (cd backend && nohup flask --app wsgi run --port 5001 > ../backend.log 2>&1 &)
+          (cd frontend && nohup npm run dev > ../frontend.log 2>&1 &)
+          for url in http://localhost:5001/api/health http://localhost:5173; do
+            for i in $(seq 1 60); do curl -sf "$url" > /dev/null && break; sleep 1; done
+            curl -sf "$url" > /dev/null || { echo "$url never came up"; exit 1; }
+          done
+      - run: npx playwright test --reporter=list,junit,html
         working-directory: frontend
-      - name: Wait for servers
-        run: npx wait-on http://localhost:5001/api/health http://localhost:5173 --timeout 60000
-        working-directory: frontend
-      - run: npm run test:e2e
-        working-directory: frontend
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: playwright-report
-          path: frontend/playwright-report/
-          retention-days: 7
-      - name: Upload server logs
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: server-logs
+          name: e2e
           path: |
+            frontend/playwright-report/
+            frontend/junit.xml
             backend.log
             frontend.log
           retention-days: 7

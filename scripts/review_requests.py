@@ -1,58 +1,33 @@
 #!/usr/bin/env python3
 """
-List open GitLab merge requests in morkar-group/yarnboard where you are a
-requested reviewer and that you haven't had reviewed at their current
-commit. Used by the "MR review requests" scheduled task.
+List open pull requests in morkar-dev/Yarnboard on GitHub that haven't been
+reviewed at their current commit. Used by the hourly "PR reviews"
+scheduled task.
 
-  python3 scripts/review_requests.py            # JSON list of MRs to review
-  python3 scripts/review_requests.py --mark IID SHA   # record a review as done
+  python3 scripts/review_requests.py               # JSON list of PRs to review
+  python3 scripts/review_requests.py --mark N SHA  # record PR N reviewed at SHA
 
-Token: a GitLab personal access token with the read_api scope, in
-~/.config/yarnboard/gitlab-token (only the token, chmod 600), or in the
-file named by YARNBOARD_GITLAB_TOKEN_FILE. It is never printed. State (which MR commits were already reviewed) lives in
-~/.config/yarnboard/review-state.json.
+Every open, non-draft PR counts: on a one-person repo nobody can be asked
+to review their own PR, so waiting for a review request would never fire.
+A PR comes back again when it gets new commits.
+
+Uses the GitHub CLI (`gh`), already logged in on this Mac, so no token is
+handled here. State (which commit of each PR was reviewed) lives in
+~/.config/yarnboard/github-review-state.json.
 """
 
 import json
-import os
+import subprocess
 import sys
-import urllib.parse
-import urllib.request
 from pathlib import Path
 
-PROJECT = "morkar-group/yarnboard"
-API = "https://gitlab.com/api/v4"
-CONFIG = Path.home() / ".config" / "yarnboard"
-TOKEN_FILE = Path(os.environ.get("YARNBOARD_GITLAB_TOKEN_FILE") or CONFIG / "gitlab-token").expanduser()
-STATE_FILE = CONFIG / "review-state.json"
+REPO = "morkar-dev/Yarnboard"
+STATE_FILE = Path.home() / ".config" / "yarnboard" / "github-review-state.json"
 
 
 def fail(message: str) -> None:
     print(json.dumps({"error": message}))
     sys.exit(1)
-
-
-def token() -> str:
-    if not TOKEN_FILE.exists():
-        fail(f"No token: create {TOKEN_FILE} with a read_api GitLab token.")
-    value = TOKEN_FILE.read_text().strip()
-    if not value:
-        fail(f"{TOKEN_FILE} is empty.")
-    return value
-
-
-def get(path: str, params: dict | None = None):
-    url = f"{API}{path}"
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(url, headers={"PRIVATE-TOKEN": token()})
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)
-    except urllib.error.HTTPError as exc:
-        fail(f"GitLab API {exc.code} for {path}")
-    except urllib.error.URLError as exc:
-        fail(f"Can't reach GitLab: {exc.reason}")
 
 
 def load_state() -> dict:
@@ -62,38 +37,50 @@ def load_state() -> dict:
         return {}
 
 
+def open_pull_requests() -> list[dict]:
+    try:
+        result = subprocess.run(
+            [
+                "gh", "pr", "list", "-R", REPO, "--state", "open", "--limit", "100",
+                "--json", "number,title,url,author,headRefName,baseRefName,headRefOid,isDraft",
+            ],
+            capture_output=True, text=True, timeout=60,
+        )
+    except FileNotFoundError:
+        fail("The GitHub CLI (gh) isn't installed.")
+    except subprocess.TimeoutExpired:
+        fail("GitHub didn't answer within 60 seconds.")
+    if result.returncode != 0:
+        fail(f"gh pr list failed: {result.stderr.strip()[:300]} (run `gh auth status`)")
+    return json.loads(result.stdout)
+
+
 def main() -> None:
     if len(sys.argv) == 4 and sys.argv[1] == "--mark":
         state = load_state()
         state[sys.argv[2]] = sys.argv[3]
-        CONFIG.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         STATE_FILE.write_text(json.dumps(state, indent=2))
         print(json.dumps({"marked": sys.argv[2], "sha": sys.argv[3]}))
         return
 
-    me = get("/user")["username"]
-    project = urllib.parse.quote(PROJECT, safe="")
-    mrs = get(
-        f"/projects/{project}/merge_requests",
-        {"state": "opened", "reviewer_username": me, "per_page": 100},
-    )
     state = load_state()
     pending = [
         {
-            "iid": mr["iid"],
-            "title": mr["title"],
-            "url": mr["web_url"],
-            "author": mr["author"]["username"],
-            "source_branch": mr["source_branch"],
-            "target_branch": mr["target_branch"],
-            "sha": mr["sha"],
-            "draft": mr.get("draft", False),
-            "re_review": str(mr["iid"]) in state,
+            "number": pr["number"],
+            "title": pr["title"],
+            "url": pr["url"],
+            "author": pr["author"]["login"],
+            "head_branch": pr["headRefName"],
+            "base_branch": pr["baseRefName"],
+            "sha": pr["headRefOid"],
+            "draft": pr["isDraft"],
+            "re_review": str(pr["number"]) in state,
         }
-        for mr in mrs
-        if state.get(str(mr["iid"])) != mr["sha"]
+        for pr in open_pull_requests()
+        if state.get(str(pr["number"])) != pr["headRefOid"]
     ]
-    print(json.dumps({"reviewer": me, "pending": pending}, indent=2))
+    print(json.dumps({"repo": REPO, "pending": pending}, indent=2))
 
 
 if __name__ == "__main__":
