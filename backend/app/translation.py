@@ -66,15 +66,13 @@ REQUEST_TIMEOUT_SECONDS = 60
 # The main model's attempt is cut shorter than REQUEST_TIMEOUT_SECONDS so
 # a slow one still leaves the fallback enough of TOTAL_BUDGET_SECONDS.
 PRIMARY_ATTEMPT_SECONDS = 45
-# Gemini occasionally 503s under load (seen directly in production) --
-# retried automatically rather than failing the whole translate request
-# on a transient blip, on the fallback model after the main one fails.
-# A 4xx (bad request, invalid key, etc.) is never retried -- that's not
-# going to succeed on a second attempt, it'll just make the caller wait
-# longer to see the same error -- except a 429 from the main model,
-# which only says that model is busy for us; the fallback has its own
-# limits.
-MAX_RETRIES = 3
+# Gemini often 503s ("high demand") or 429s under load -- both models,
+# on and off, seconds apart (seen in November 2026: one call failed,
+# the next succeeded in 1.5 s). So a busy answer or a timeout is retried
+# on the *other* model, alternating, with a growing pause, until
+# TOTAL_BUDGET_SECONDS runs out. Any other 4xx (bad request, invalid key)
+# is never retried: it would only fail again.
+MAX_RETRIES = 10  # in practice TOTAL_BUDGET_SECONDS ends it first
 RETRY_BACKOFF_SECONDS = 2
 # All attempts plus backoff must finish inside gunicorn's 90 s worker
 # timeout (backend/gunicorn.conf.py), with room left for the rest of the
@@ -220,23 +218,21 @@ def _call_gemini(prompt: str, *, extra_parts: list[dict] | None = None, schema: 
             break
         except requests.RequestException as exc:
             status = exc.response.status_code if exc.response is not None else None
-            switch = model != fallback and (status is None or status == 429 or status >= 500)
-            # A 4xx won't succeed on retry (bad request, invalid key,
-            # etc.) -- fail immediately instead of burning the retry
-            # budget on something that can't change. A 429 is retried
-            # only by switching to the fallback.
-            is_client_error = status is not None and 400 <= status < 500 and not switch
-            # Switching models needs no backoff: the fallback isn't the
-            # one that's overloaded.
-            backoff = 0 if switch else RETRY_BACKOFF_SECONDS * (attempt + 1)
+            busy = status is None or status == 429 or status >= 500
+            other = fallback if model == primary else primary
+            switch = busy and other != model
+            # The first switch needs no pause: the other model isn't the
+            # one that just said it's overloaded. After that, both have
+            # been busy, so wait a little longer each time.
+            backoff = 0 if switch and attempt == 0 else RETRY_BACKOFF_SECONDS * (attempt if switch else attempt + 1)
             out_of_time = deadline - _monotonic() - backoff < MIN_ATTEMPT_SECONDS
-            if is_client_error or attempt == MAX_RETRIES or out_of_time:
+            if not busy or attempt == MAX_RETRIES or out_of_time:
                 raise TranslationError(
                     f"Gemini API request failed ({model}): {str(exc).replace(api_key, '<redacted>')}"
                 ) from exc
             if switch:
-                logger.warning("Gemini %s failed (%s); falling back to %s", model, status or type(exc).__name__, fallback)
-                model = fallback
+                logger.warning("Gemini %s failed (%s); trying %s", model, status or type(exc).__name__, other)
+                model = other
             time.sleep(backoff)
 
     try:
