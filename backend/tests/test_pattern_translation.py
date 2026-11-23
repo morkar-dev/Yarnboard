@@ -514,12 +514,13 @@ def test_bad_request_does_not_fall_back(monkeypatch, default_models):
     assert models == [translation.GEMINI_MODEL]
 
 
-def test_fallback_keeps_retrying_on_itself(monkeypatch, default_models):
+def test_busy_models_are_tried_alternately(monkeypatch, default_models):
+    """Both models 503 on and off, so retries alternate between them."""
     models = []
 
     def fake_post(url, params, json, timeout):
         models.append(_model_of(url))
-        if len(models) < 3:
+        if len(models) < 4:
             raise _fake_response_error(503)
         return _FakeGeminiResponse(_gemini_payload(INSTRUCTIONS))
 
@@ -527,7 +528,32 @@ def test_fallback_keeps_retrying_on_itself(monkeypatch, default_models):
 
     translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
 
-    assert models == [translation.GEMINI_MODEL, translation.GEMINI_FALLBACK_MODEL, translation.GEMINI_FALLBACK_MODEL]
+    main, lite = translation.GEMINI_MODEL, translation.GEMINI_FALLBACK_MODEL
+    assert models == [main, lite, main, lite]
+
+
+def test_busy_models_keep_being_retried_until_the_time_runs_out(monkeypatch, default_models):
+    """Fast 503s from both models are retried until the budget ends, not
+    after a handful of tries -- and never past it."""
+    monkeypatch.setattr(translation, "RETRY_BACKOFF_SECONDS", 2)
+    clock = _FakeClock()
+    start = clock.now
+    monkeypatch.setattr(translation, "_monotonic", clock)
+    monkeypatch.setattr(translation.time, "sleep", lambda seconds: setattr(clock, "now", clock.now + seconds))
+    calls = {"count": 0}
+
+    def fake_post(url, params, json, timeout):
+        calls["count"] += 1
+        clock.now += 1.5  # a quick "high demand" answer
+        raise _fake_response_error(503)
+
+    monkeypatch.setattr(translation.requests, "post", fake_post)
+
+    with pytest.raises(translation.TranslationError):
+        translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
+
+    assert calls["count"] > 4  # the old code stopped after 4
+    assert clock.now - start <= translation.TOTAL_BUDGET_SECONDS
 
 
 def test_models_can_be_set_by_environment(monkeypatch, default_models):
