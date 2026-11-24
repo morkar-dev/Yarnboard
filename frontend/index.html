@@ -4,10 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Organize knitting & crochet patterns from URLs, PDFs & Stitch Fiddle into a to-do list. Keep private, share, or post free patterns to the community.">
-    <title>Yarnboard</title>
+    <title>Yarnboard | Knitting & Crochet Patterns Organized Tracker</title>
+    <!-- no need to define cannonical url since url routing works through cloudflare giving 301 -->
+    <meta property="og:title" content="Yarnboard | Knitting & Crochet Patterns Organized Tracker" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://www.yarnboard.net/" />
+    <!-- <meta property="og:image" content="" /> -->
+    <meta property="og:description" content="Organize knitting & crochet patterns from URLs, PDFs & Stitch Fiddle into a to-do list. Keep private, share, or post free patterns to the community." />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org/",
+        "@type": "WebSite",
+        "name": "Yarnboard",
+        "url": "https://www.yarnboard.net/",
+        "description": "width=device-width, initial-scale=1.0"
+      }
+    </script>
   </body>
 </html>

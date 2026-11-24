@@ -202,7 +202,7 @@ function TermsEnglish() {
       <h2 className="h4 mt-4">1. General</h2>
       <p>
         1.1. Welcome to Yarnboard (the "Site"), at www.yarnboard.net. The Site is operated by Mor
-        Karniali (the "Operator", "we" or "us").
+        Karniely (the "Operator", "we" or "us").
       </p>
       <p>
         1.2. By using the Site, including browsing, registering or uploading content, you agree
