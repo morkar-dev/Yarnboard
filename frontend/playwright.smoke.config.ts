@@ -26,7 +26,9 @@ export default defineConfig({
   use: {
     baseURL: SMOKE_BASE_URL(),
     storageState: AUTH_FILE,
-    trace: "retain-on-failure",
+    // Traces record every request's headers, session cookie included, and
+    // CI uploads smoke-results/ as an artifact of a public repo.
+    trace: process.env.CI ? "off" : "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
