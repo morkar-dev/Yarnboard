@@ -1,6 +1,7 @@
 import { request, type APIRequestContext } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import { cleanError, safeApi } from "./api";
 import { deleteSmokePatterns } from "./cleanup";
 import {
   AUTH_FILE,
@@ -30,7 +31,7 @@ async function waitForApi(api: APIRequestContext) {
         (headers["x-render-routing"] ? `, x-render-routing: ${headers["x-render-routing"]}` : "") +
         (headers["cf-mitigated"] ? `, cf-mitigated: ${headers["cf-mitigated"]} (Cloudflare challenge)` : "");
     } catch (error) {
-      last = String(error);
+      last = cleanError(error).message;
     }
     console.log(`[smoke] API not ready (${last}); retrying...`);
     await new Promise((resolve) => setTimeout(resolve, WAKE_POLL_MS));
@@ -62,7 +63,7 @@ async function createFreshSmokePattern(api: APIRequestContext, username: string)
 }
 
 export default async function globalSetup() {
-  const api = await request.newContext({ baseURL: SMOKE_BASE_URL() });
+  const api = safeApi(await request.newContext({ baseURL: SMOKE_BASE_URL() }));
   try {
     await waitForApi(api);
 

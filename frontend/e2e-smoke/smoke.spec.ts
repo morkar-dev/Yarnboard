@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./api";
 import fs from "node:fs";
 import { PHOTO_FILE, REQUIRED_FLAGS, SMOKE_PATTERN_TITLE, STATE_FILE } from "./fixtures";
 
@@ -9,8 +10,8 @@ const { patternId } = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8")) as { patt
 // rather than a client-side timeout.
 const GEMINI_TIMEOUT_MS = 120_000;
 
-test("health: required settings are present on this deployment", async ({ request }) => {
-  const response = await request.get("/api/health");
+test("health: required settings are present on this deployment", async ({ api }) => {
+  const response = await api.get("/api/health");
   expect(response.ok()).toBe(true);
   const { config } = (await response.json()) as { config: Record<string, boolean> };
 
@@ -32,17 +33,17 @@ test("site: logged-in user can open their pattern", async ({ page }) => {
   await expect(page.getByText(SMOKE_PATTERN_TITLE).first()).toBeVisible({ timeout: 30_000 });
 });
 
-test("paste text: preview parses a pattern", async ({ request }) => {
-  const response = await request.post("/api/patterns/preview-text", {
+test("paste text: preview parses a pattern", async ({ api }) => {
+  const response = await api.post("/api/patterns/preview-text", {
     data: { text: "Coaster\n\nMaterials:\nYarn\n\nInstructions:\nRound 1: 6 sc in ring." },
   });
   expect(response.status(), await response.text()).toBe(200);
   expect((await response.json()).draft).toBeTruthy();
 });
 
-test("photo upload: Gemini reads a pattern photo", async ({ request }) => {
+test("photo upload: Gemini reads a pattern photo", async ({ api }) => {
   test.setTimeout(GEMINI_TIMEOUT_MS + 30_000);
-  const response = await request.post("/api/patterns/preview-photos", {
+  const response = await api.post("/api/patterns/preview-photos", {
     multipart: {
       photos: { name: "pattern-photo.jpg", mimeType: "image/jpeg", buffer: fs.readFileSync(PHOTO_FILE) },
     },
@@ -53,9 +54,9 @@ test("photo upload: Gemini reads a pattern photo", async ({ request }) => {
   expect(JSON.stringify(draft).toLowerCase()).toContain("magic ring");
 });
 
-test("translation: Gemini translates a pattern to Hebrew", async ({ request }) => {
+test("translation: Gemini translates a pattern to Hebrew", async ({ api }) => {
   test.setTimeout(GEMINI_TIMEOUT_MS + 30_000);
-  const response = await request.post(`/api/patterns/${patternId}/translate`, {
+  const response = await api.post(`/api/patterns/${patternId}/translate`, {
     timeout: GEMINI_TIMEOUT_MS,
   });
   expect(response.status(), await response.text()).toBe(200);
