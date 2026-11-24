@@ -3,26 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Organize knitting & crochet patterns from URLs, PDFs & Stitch Fiddle into a to-do list. Keep private, share, or post free patterns to the community.">
-    <title>Yarnboard | Knitting & Crochet Patterns Organized Tracker</title>
-    <!-- no need to define cannonical url since url routing works through cloudflare giving 301 -->
-    <meta property="og:title" content="Yarnboard | Knitting & Crochet Patterns Organized Tracker" />
+    <meta name="description" content="Organize knitting &amp; crochet patterns from URLs, PDFs &amp; Stitch Fiddle into a to-do list. Keep private, share, or post free patterns to the community." />
+    <title>Yarnboard | Knitting &amp; Crochet Patterns Organized Tracker</title>
+    <!-- Cloudflare 301s yarnboard.net to www, but search engines still want
+         the preferred URL stated on the page itself. -->
+    <link rel="canonical" href="https://www.yarnboard.net/" />
+    <meta property="og:site_name" content="Yarnboard" />
+    <meta property="og:title" content="Yarnboard | Knitting &amp; Crochet Patterns Organized Tracker" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://www.yarnboard.net/" />
-    <!-- <meta property="og:image" content="" /> -->
-    <meta property="og:description" content="Organize knitting & crochet patterns from URLs, PDFs & Stitch Fiddle into a to-do list. Keep private, share, or post free patterns to the community." />
+    <meta property="og:image" content="https://www.yarnboard.net/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Yarnboard: knitting &amp; crochet patterns, organized" />
+    <meta property="og:description" content="Organize knitting &amp; crochet patterns from URLs, PDFs &amp; Stitch Fiddle into a to-do list. Keep private, share, or post free patterns to the community." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Yarnboard",
+        "url": "https://www.yarnboard.net/",
+        "description": "Organize knitting & crochet patterns from URLs, PDFs & Stitch Fiddle into a to-do list. Keep private, share, or post free patterns to the community."
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org/",
-        "@type": "WebSite",
-        "name": "Yarnboard",
-        "url": "https://www.yarnboard.net/",
-        "description": "width=device-width, initial-scale=1.0"
-      }
-    </script>
   </body>
 </html>

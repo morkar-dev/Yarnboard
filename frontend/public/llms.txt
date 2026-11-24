@@ -1,0 +1,17 @@
+# Yarnboard
+
+> Yarnboard organizes knitting and crochet patterns into a to-do list. Save a pattern from a web page, a PDF, a photo or Stitch Fiddle, tick off rows as you work, keep it private, share it with friends, or post free patterns to the community.
+
+Yarnboard is a single-page web app. Public pages work without an account; saving, uploading and tracking patterns need a free account. Pattern text can be translated between English and Hebrew.
+
+## Main pages
+
+- [Home](https://www.yarnboard.net/): what Yarnboard does and how to start
+- [Community patterns](https://www.yarnboard.net/community): free patterns other users chose to share publicly
+- [Add a pattern](https://www.yarnboard.net/submit): import from a link, PDF, photo or pasted text
+- [Terms of use](https://www.yarnboard.net/terms): rules for using the site and for sharing patterns
+
+## Optional
+
+- [Sitemap](https://www.yarnboard.net/sitemap.xml)
+- [AI catalog](https://www.yarnboard.net/ai-catalog.json): the same overview as JSON
