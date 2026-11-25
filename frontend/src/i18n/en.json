@@ -25,7 +25,8 @@
     "searchPlaceholder": "Search patterns...",
     "searchSubmit": "Search",
     "searchOpen": "Open search",
-    "newsletter": "Send newsletter"
+    "newsletter": "Send newsletter",
+    "updates": "Updates"
   },
   "home": {
     "welcome": "Welcome",
@@ -419,5 +420,13 @@
     "noSubscribers": "Nobody has turned on product updates yet, so there's no one to send to.",
     "failed": "That didn't work. Try again in a moment.",
     "adminOnly": "Only admins can send newsletters."
+  },
+  "updates": {
+    "title": "What's new",
+    "intro": "New features and changes in Yarnboard, newest first.",
+    "empty": "No updates yet.",
+    "subscribe": "Want these by email?",
+    "subscribeLink": "Turn on product updates",
+    "failed": "Couldn't load the updates. Try again in a moment."
   }
 }

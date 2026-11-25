@@ -496,6 +496,20 @@ export interface NewsletterDraft {
   body: string;
 }
 
+/** One product update on the public Updates page: a newsletter that went
+ * out (see backend/app/newsletter/routes.py's list_updates). */
+export type ProductUpdate = {
+  id: number;
+  subject: string;
+  body: string;
+  sent_at: string | null;
+};
+
+/** Public, no login: every sent newsletter, newest first. */
+export function fetchUpdates() {
+  return request<{ updates: ProductUpdate[] }>("/api/updates");
+}
+
 /** Admin only: how many people a send would reach right now. */
 export function fetchNewsletterStatus() {
   return request<{ subscriber_count: number }>("/api/admin/newsletter");

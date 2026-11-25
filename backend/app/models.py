@@ -538,3 +538,33 @@ class Notification(db.Model):
             "read": self.read,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class NewsletterIssue(db.Model):
+    """
+    One product-update newsletter, as sent from the admin page (see
+    newsletter/routes.py). Published issues are also the public Updates
+    page (GET /api/updates), so the email and the site say the same thing.
+
+    The row is written *before* the emails go out, unpublished, and only
+    published once every batch was handed to Resend -- so a send that
+    stops partway never shows up on the site as if it had gone out.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    subject = db.Column(db.String(150), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    published = db.Column(db.Boolean, nullable=False, default=False)
+    recipient_count = db.Column(db.Integer, nullable=True)
+    sent_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    sent_at = db.Column(db.DateTime, nullable=True)
+
+    def to_public_dict(self):
+        """What anyone may see: never who sent it or to how many."""
+        return {
+            "id": self.id,
+            "subject": self.subject,
+            "body": self.body,
+            "sent_at": self.sent_at.isoformat() if self.sent_at else None,
+        }
