@@ -26,6 +26,7 @@ const StitchFiddlePage = lazy(() => import("./pages/StitchFiddlePage"));
 const SubmitPatternPage = lazy(() => import("./pages/SubmitPatternPage"));
 const TermsPage = lazy(() => import("./pages/TermsPage"));
 const UnsubscribePage = lazy(() => import("./pages/UnsubscribePage"));
+const UpdatesPage = lazy(() => import("./pages/UpdatesPage"));
 const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage"));
 
 export default function App() {
@@ -115,6 +116,7 @@ export default function App() {
               }
             />
             <Route path="/unsubscribe" element={<UnsubscribePage />} />
+            <Route path="/updates" element={<UpdatesPage />} />
           </Routes>
         </Suspense>
       </Container>

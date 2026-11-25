@@ -59,6 +59,9 @@ export default function NavBar() {
             <Nav.Link as={Link} to="/submit">
               {t("nav.submit")}
             </Nav.Link>
+            <Nav.Link as={Link} to="/updates">
+              {t("nav.updates")}
+            </Nav.Link>
             {user && (
               <>
                 <Nav.Link as={Link} to="/mine">
