@@ -10,9 +10,14 @@ name: Smoke
 #   - Every day at 06:00 UTC: both sites.
 #   - Actions tab > Smoke > Run workflow: pick dev, prod or both.
 #
+# Before the tests, each job wakes its Render API directly
+# (e2e-smoke/wake-api.mjs): a sleeping free-plan service won't wake for
+# requests that come through the Worker.
+#
 # Needs repository secrets SMOKE_DEV_EMAIL, SMOKE_DEV_PASSWORD,
 # SMOKE_PROD_EMAIL, SMOKE_PROD_PASSWORD, and the repository variable
-# SMOKE_PROD_URL (SMOKE_DEV_URL optional).
+# SMOKE_PROD_URL (SMOKE_DEV_URL, SMOKE_DEV_API_URL and SMOKE_PROD_API_URL
+# optional).
 
 on:
   push:
@@ -45,6 +50,7 @@ jobs:
     env:
       HOME: /root
       SMOKE_BASE_URL: ${{ vars.SMOKE_DEV_URL || 'https://yarnboard-dev.morkar9696.workers.dev' }}
+      SMOKE_API_URL: ${{ vars.SMOKE_DEV_API_URL || 'https://yarnboard-dev-api.onrender.com' }}
       SMOKE_EMAIL: ${{ secrets.SMOKE_DEV_EMAIL }}
       SMOKE_PASSWORD: ${{ secrets.SMOKE_DEV_PASSWORD }}
       SMOKE_REQUIRE: gemini,proxy_secret,proxy_verified
@@ -64,6 +70,8 @@ jobs:
         working-directory: .
       - uses: actions/checkout@v4
       - run: npm ci
+      - name: Wake the API
+        run: node e2e-smoke/wake-api.mjs "$SMOKE_API_URL"
       - run: npm run test:smoke
       - uses: actions/upload-artifact@v4
         if: always()
@@ -89,6 +97,7 @@ jobs:
     env:
       HOME: /root
       SMOKE_BASE_URL: ${{ vars.SMOKE_PROD_URL }}
+      SMOKE_API_URL: ${{ vars.SMOKE_PROD_API_URL || 'https://yarnboard.onrender.com' }}
       SMOKE_EMAIL: ${{ secrets.SMOKE_PROD_EMAIL }}
       SMOKE_PASSWORD: ${{ secrets.SMOKE_PROD_PASSWORD }}
       SMOKE_REQUIRE: gemini,email_onboarding,email_notifications,proxy_secret,proxy_verified
@@ -108,6 +117,8 @@ jobs:
         working-directory: .
       - uses: actions/checkout@v4
       - run: npm ci
+      - name: Wake the API
+        run: node e2e-smoke/wake-api.mjs "$SMOKE_API_URL"
       - run: npm run test:smoke
       - uses: actions/upload-artifact@v4
         if: always()
