@@ -307,7 +307,7 @@ def test_glossary_terms_are_included_in_the_prompt_sent_to_gemini(monkeypatch, t
 
     captured = {}
 
-    def fake_post(url, params, json, timeout):
+    def fake_post(url, headers, json, timeout):
         captured["prompt"] = json["contents"][0]["parts"][0]["text"]
         return _FakeGeminiResponse(_gemini_payload(INSTRUCTIONS))
 
@@ -356,7 +356,7 @@ def test_translation_retries_on_transient_server_error_then_succeeds(monkeypatch
     monkeypatch.setattr(translation, "RETRY_BACKOFF_SECONDS", 0)  # don't actually sleep in tests
     calls = {"count": 0}
 
-    def fake_post(url, params, json, timeout):
+    def fake_post(url, headers, json, timeout):
         calls["count"] += 1
         if calls["count"] < 3:
             raise _fake_response_error(503)
@@ -375,7 +375,7 @@ def test_translation_gives_up_after_max_retries(monkeypatch):
     monkeypatch.setattr(translation, "RETRY_BACKOFF_SECONDS", 0)
     calls = {"count": 0}
 
-    def fake_post(url, params, json, timeout):
+    def fake_post(url, headers, json, timeout):
         calls["count"] += 1
         raise _fake_response_error(503)
 
@@ -392,7 +392,7 @@ def test_translation_does_not_retry_a_client_error(monkeypatch):
     monkeypatch.setattr(translation, "RETRY_BACKOFF_SECONDS", 0)
     calls = {"count": 0}
 
-    def fake_post(url, params, json, timeout):
+    def fake_post(url, headers, json, timeout):
         calls["count"] += 1
         raise _fake_response_error(400)
 
@@ -426,7 +426,7 @@ def test_gemini_attempts_stay_inside_the_total_time_budget(monkeypatch):
     start = clock.now
     timeouts = []
 
-    def fake_post(url, params, json, timeout):
+    def fake_post(url, headers, json, timeout):
         timeouts.append(timeout)
         clock.now += timeout  # the whole timeout passes, then it fails
         raise translation.requests.exceptions.ReadTimeout("Read timed out.")
@@ -452,7 +452,7 @@ def test_gemini_does_not_start_an_attempt_with_too_little_time_left(monkeypatch)
     monkeypatch.setattr(translation, "_monotonic", clock)
     calls = {"count": 0}
 
-    def fake_post(url, params, json, timeout):
+    def fake_post(url, headers, json, timeout):
         calls["count"] += 1
         # A slow 503: uses up all but a few seconds of the budget.
         clock.now += translation.TOTAL_BUDGET_SECONDS - translation.MIN_ATTEMPT_SECONDS + 1
@@ -483,7 +483,7 @@ def default_models(monkeypatch):
 def test_busy_main_model_falls_back_to_the_lighter_model(monkeypatch, default_models, failure):
     models = []
 
-    def fake_post(url, params, json, timeout):
+    def fake_post(url, headers, json, timeout):
         models.append(_model_of(url))
         if len(models) == 1:
             if failure == "timeout":
@@ -502,7 +502,7 @@ def test_busy_main_model_falls_back_to_the_lighter_model(monkeypatch, default_mo
 def test_bad_request_does_not_fall_back(monkeypatch, default_models):
     models = []
 
-    def fake_post(url, params, json, timeout):
+    def fake_post(url, headers, json, timeout):
         models.append(_model_of(url))
         raise _fake_response_error(400)
 
@@ -518,7 +518,7 @@ def test_busy_models_are_tried_alternately(monkeypatch, default_models):
     """Both models 503 on and off, so retries alternate between them."""
     models = []
 
-    def fake_post(url, params, json, timeout):
+    def fake_post(url, headers, json, timeout):
         models.append(_model_of(url))
         if len(models) < 4:
             raise _fake_response_error(503)
@@ -542,7 +542,7 @@ def test_busy_models_keep_being_retried_until_the_time_runs_out(monkeypatch, def
     monkeypatch.setattr(translation.time, "sleep", lambda seconds: setattr(clock, "now", clock.now + seconds))
     calls = {"count": 0}
 
-    def fake_post(url, params, json, timeout):
+    def fake_post(url, headers, json, timeout):
         calls["count"] += 1
         clock.now += 1.5  # a quick "high demand" answer
         raise _fake_response_error(503)
@@ -561,7 +561,7 @@ def test_models_can_be_set_by_environment(monkeypatch, default_models):
     monkeypatch.setenv("GEMINI_FALLBACK_MODEL", "fallback-from-env")
     models = []
 
-    def fake_post(url, params, json, timeout):
+    def fake_post(url, headers, json, timeout):
         models.append(_model_of(url))
         if len(models) == 1:
             raise _fake_response_error(503)
@@ -572,3 +572,20 @@ def test_models_can_be_set_by_environment(monkeypatch, default_models):
     translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
 
     assert models == ["main-from-env", "fallback-from-env"]
+
+
+def test_gemini_key_goes_in_a_header_never_the_url(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza-test-key-12345")
+    calls = []
+
+    def fake_post(url, headers, json, timeout):
+        calls.append((url, headers))
+        return _FakeGeminiResponse(_gemini_payload(INSTRUCTIONS))
+
+    monkeypatch.setattr(translation.requests, "post", fake_post)
+
+    translation.translate_pattern_to_hebrew("Title", "Materials", "k: knit", INSTRUCTIONS)
+
+    url, headers = calls[0]
+    assert headers == {"x-goog-api-key": "AIza-test-key-12345"}
+    assert "AIza-test-key-12345" not in url
