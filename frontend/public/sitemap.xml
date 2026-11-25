@@ -1,27 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-
-   <url>
-
-      <loc>https://www.yarnboard.net/</loc>
-
-      <lastmod>2026-10-12</lastmod>
-
-   </url>
-   <url>
-
-      <loc>https://www.yarnboard.net/community</loc>
-
-      <lastmod>2026-10-12</lastmod>
-
-   </url>
-   <url>
-
-      <loc>https://www.yarnboard.net/terms</loc>
-
-      <lastmod>2026-10-12</lastmod>
-
-   </url>
-
-</urlset> 
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://www.yarnboard.net/</loc>
+    <lastmod>2026-11-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.yarnboard.net/" />
+    <xhtml:link rel="alternate" hreflang="he" href="https://www.yarnboard.net/he" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.yarnboard.net/" />
+  </url>
+  <url>
+    <loc>https://www.yarnboard.net/he</loc>
+    <lastmod>2026-11-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.yarnboard.net/" />
+    <xhtml:link rel="alternate" hreflang="he" href="https://www.yarnboard.net/he" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.yarnboard.net/" />
+  </url>
+  <url>
+    <loc>https://www.yarnboard.net/community</loc>
+    <lastmod>2026-11-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.yarnboard.net/community" />
+    <xhtml:link rel="alternate" hreflang="he" href="https://www.yarnboard.net/he/community" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.yarnboard.net/community" />
+  </url>
+  <url>
+    <loc>https://www.yarnboard.net/he/community</loc>
+    <lastmod>2026-11-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.yarnboard.net/community" />
+    <xhtml:link rel="alternate" hreflang="he" href="https://www.yarnboard.net/he/community" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.yarnboard.net/community" />
+  </url>
+  <url>
+    <loc>https://www.yarnboard.net/terms</loc>
+    <lastmod>2026-11-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.yarnboard.net/terms" />
+    <xhtml:link rel="alternate" hreflang="he" href="https://www.yarnboard.net/he/terms" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.yarnboard.net/terms" />
+  </url>
+  <url>
+    <loc>https://www.yarnboard.net/he/terms</loc>
+    <lastmod>2026-11-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.yarnboard.net/terms" />
+    <xhtml:link rel="alternate" hreflang="he" href="https://www.yarnboard.net/he/terms" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.yarnboard.net/terms" />
+  </url>
+</urlset>

@@ -2,7 +2,7 @@
 
 > Yarnboard organizes knitting and crochet patterns into a to-do list. Save a pattern from a web page, a PDF, a photo or Stitch Fiddle, tick off rows as you work, keep it private, share it with friends, or post free patterns to the community.
 
-Yarnboard is a single-page web app. Public pages work without an account; saving, uploading and tracking patterns need a free account. Pattern text can be translated between English and Hebrew.
+Yarnboard is a single-page web app. Public pages work without an account; saving, uploading and tracking patterns need a free account. Pattern text can be translated between English and Hebrew, and every page also exists in Hebrew under /he (for example https://www.yarnboard.net/he/community).
 
 ## Main pages
 
