@@ -6,3 +6,6 @@ User-agent: *
 Disallow: /api
 Disallow: /login
 Disallow: /register
+Disallow: /he/login
+Disallow: /he/register
+Sitemap: https://www.yarnboard.net/sitemap.xml

@@ -3,8 +3,9 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
-import i18n, { getStoredLanguage } from "./i18n";
+import i18n, { getStoredLanguage, storeLanguage } from "./i18n";
 import { applyDirection } from "./i18n/direction";
+import { languageFromPath, pathForLanguage, routerBasename } from "./i18n/urls";
 // Bootstrap sits in a cascade layer (see bootstrap.css), so theme.css and
 // styles.css override it whatever the load order -- including the RTL
 // build added later for Hebrew. The LTR build is a plain static import (like theme.css/styles.css below) so
@@ -22,15 +23,26 @@ import "./bootstrap.css";
 import "./theme.css";
 import "./styles.css";
 
-applyDirection(getStoredLanguage());
-i18n.on("languageChanged", applyDirection);
+const { pathname, search, hash } = window.location;
+const urlLanguage = languageFromPath(pathname);
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
-  </StrictMode>,
-);
+if (urlLanguage === "en" && getStoredLanguage() === "he") {
+  // A returning Hebrew reader opened an English URL (an old link, an
+  // email): show them the same page in Hebrew. Crawlers have no stored
+  // preference, so they always get the URL's own language.
+  window.location.replace(pathForLanguage(pathname, "he") + search + hash);
+} else {
+  storeLanguage(urlLanguage);
+  applyDirection(urlLanguage);
+  i18n.on("languageChanged", applyDirection);
+
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <BrowserRouter basename={routerBasename(pathname)}>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </BrowserRouter>
+    </StrictMode>,
+  );
+}

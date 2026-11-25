@@ -1,2 +1,21 @@
+# Cloudflare Workers static-asset headers (wrangler.jsonc's assets). They
+# apply to every file and to the SPA's index.html fallback; /api/* goes
+# through worker/index.js instead, and the API sets its own headers.
+
+# script-src needs 'unsafe-inline' only because Cloudflare's bot
+# detection injects a per-request inline <script> into the HTML on the
+# custom domain; the app itself ships no inline scripts. style-src needs
+# it for i18n/direction.ts's <style> (Bootstrap RTL) and React style props.
+# img-src allows any https: image because scraped patterns keep their
+# original site's photo URL; data: and blob: cover Bootstrap's inline
+# SVGs and photo previews before upload.
+/*
+    Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+    Strict-Transport-Security: max-age=31536000; includeSubDomains
+    Cross-Origin-Opener-Policy: same-origin
+    X-Frame-Options: DENY
+    X-Content-Type-Options: nosniff
+    Referrer-Policy: strict-origin-when-cross-origin
+
 /assets/*
     Cache-Control: public, max-age=31536000, immutable
