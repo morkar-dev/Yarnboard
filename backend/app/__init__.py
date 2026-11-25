@@ -92,10 +92,12 @@ def create_app(config_overrides: dict | None = None):
     from .auth.routes import auth_bp
     from .patterns.routes import patterns_bp
     from .stitch_fiddle.routes import stitch_fiddle_bp
+    from .newsletter.routes import newsletter_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(patterns_bp)
     app.register_blueprint(stitch_fiddle_bp)
+    app.register_blueprint(newsletter_bp)
 
     @app.cli.command("init-db")
     def init_db():

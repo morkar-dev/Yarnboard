@@ -4,7 +4,7 @@ import { AUTH_FILE, SMOKE_BASE_URL } from "./e2e-smoke/fixtures";
 /**
  * Smoke tests against a deployed site -- see e2e-smoke/fixtures.ts.
  * Run with `npm run test:smoke` (SMOKE_BASE_URL, SMOKE_EMAIL and
- * SMOKE_PASSWORD set). GitLab runs it via .gitlab-ci.yml's smoke jobs.
+ * SMOKE_PASSWORD set). GitHub Actions runs it via .github/workflows/smoke.yml.
  */
 export default defineConfig({
   testDir: "./e2e-smoke",
@@ -26,7 +26,9 @@ export default defineConfig({
   use: {
     baseURL: SMOKE_BASE_URL(),
     storageState: AUTH_FILE,
-    trace: "retain-on-failure",
+    // Traces record every request's headers, session cookie included, and
+    // CI uploads smoke-results/ as an artifact of a public repo.
+    trace: process.env.CI ? "off" : "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

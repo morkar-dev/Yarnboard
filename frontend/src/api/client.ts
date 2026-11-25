@@ -468,3 +468,60 @@ export function markAllNotificationsRead() {
     method: "POST",
   });
 }
+
+// --- Newsletter -------------------------------------------------------
+
+/** Whether this user gets product update emails (opt-in, off by default). */
+export function fetchNewsletterSubscription() {
+  return request<{ subscribed: boolean }>("/api/newsletter/subscription");
+}
+
+export function updateNewsletterSubscription(subscribed: boolean) {
+  return request<{ subscribed: boolean }>("/api/newsletter/subscription", {
+    method: "PUT",
+    body: JSON.stringify({ subscribed }),
+  });
+}
+
+/** Unsubscribe with the token from a newsletter email; no login needed. */
+export function unsubscribeFromNewsletter(token: string) {
+  return request<{ unsubscribed: boolean }>("/api/newsletter/unsubscribe", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export interface NewsletterDraft {
+  subject: string;
+  body: string;
+}
+
+/** Admin only: how many people a send would reach right now. */
+export function fetchNewsletterStatus() {
+  return request<{ subscriber_count: number }>("/api/admin/newsletter");
+}
+
+/** Admin only: the email body exactly as subscribers will get it. */
+export function previewNewsletter(draft: NewsletterDraft) {
+  return request<{ subject: string; html: string }>("/api/admin/newsletter/preview", {
+    method: "POST",
+    body: JSON.stringify(draft),
+  });
+}
+
+/** Admin only: send the draft to the admin alone. */
+export function sendTestNewsletter(draft: NewsletterDraft) {
+  return request<{ sent_to: string }>("/api/admin/newsletter/test", {
+    method: "POST",
+    body: JSON.stringify(draft),
+  });
+}
+
+/** Admin only: send to every subscriber. `expectedCount` is the number the
+ * admin confirmed; the server refuses if it no longer matches. */
+export function sendNewsletter(draft: NewsletterDraft, expectedCount: number) {
+  return request<{ sent: number }>("/api/admin/newsletter/send", {
+    method: "POST",
+    body: JSON.stringify({ ...draft, expected_count: expectedCount }),
+  });
+}

@@ -25,6 +25,7 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { stripLanguagePrefix } from "../i18n/urls";
 
 export function useUnsavedChangesWarning(hasUnsavedChanges: boolean): void {
   const navigate = useNavigate();
@@ -58,7 +59,8 @@ export function useUnsavedChangesWarning(hasUnsavedChanges: boolean): void {
       e.preventDefault();
       e.stopPropagation();
       if (window.confirm(t("unsavedChanges.confirmLeave"))) {
-        navigate(destination.pathname + destination.search + destination.hash);
+        // Router paths are relative to the /he basename (see i18n/urls.ts).
+        navigate(stripLanguagePrefix(destination.pathname) + destination.search + destination.hash);
       }
     }
 

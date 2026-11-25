@@ -1,0 +1,17 @@
+{
+  "name": "Yarnboard",
+  "url": "https://www.yarnboard.net/",
+  "description": "Organize knitting & crochet patterns from URLs, PDFs, photos & Stitch Fiddle into a to-do list. Keep them private, share them, or post free patterns to the community.",
+  "languages": ["en", "he"],
+  "audience": "Knitters and crocheters",
+  "account_required": "Only for saving, uploading and tracking patterns; public pages are open to everyone.",
+  "pages": [
+    { "url": "https://www.yarnboard.net/", "title": "Home" },
+    { "url": "https://www.yarnboard.net/community", "title": "Community patterns" },
+    { "url": "https://www.yarnboard.net/submit", "title": "Add a pattern" },
+    { "url": "https://www.yarnboard.net/terms", "title": "Terms of use" }
+  ],
+  "public_api": false,
+  "llms_txt": "https://www.yarnboard.net/llms.txt",
+  "sitemap": "https://www.yarnboard.net/sitemap.xml"
+}

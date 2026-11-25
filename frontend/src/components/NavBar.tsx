@@ -2,6 +2,8 @@ import { Button, Container, Nav, Navbar, NavDropdown } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { storeLanguage } from "../i18n";
+import { pathForLanguage } from "../i18n/urls";
 import NavSearch from "./NavSearch";
 import NotificationBell from "./NotificationBell";
 
@@ -27,7 +29,13 @@ export default function NavBar() {
    * "English" while in Hebrew -- so it reads as "switch to X" rather
    * than "you are currently in X". */
   function toggleLanguage() {
-    i18n.changeLanguage(i18n.language === "he" ? "en" : "he");
+    // Each language has its own URLs (see i18n/urls.ts), so switching is a
+    // page load to the other one -- which also re-runs the router with the
+    // right basename and warns about unsaved edits like any navigation.
+    const next = i18n.language === "he" ? "en" : "he";
+    const { pathname, search, hash } = window.location;
+    storeLanguage(next);
+    window.location.assign(pathForLanguage(pathname, next) + search + hash);
   }
 
   return (
@@ -84,6 +92,11 @@ export default function NavBar() {
                   <NavDropdown.Item as={Link} to="/settings/notifications">
                     {t("nav.notificationSettings")}
                   </NavDropdown.Item>
+                  {user.is_admin && (
+                    <NavDropdown.Item as={Link} to="/admin/newsletter">
+                      {t("nav.newsletter")}
+                    </NavDropdown.Item>
+                  )}
                   <NavDropdown.Divider />
                   <NavDropdown.Item onClick={handleLogout}>{t("nav.logout")}</NavDropdown.Item>
                 </NavDropdown>

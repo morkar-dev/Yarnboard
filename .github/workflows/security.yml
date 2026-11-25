@@ -10,6 +10,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
   schedule:
     # Weekly, so a newly-disclosed CVE in an unchanged dependency still
     # gets caught even with no code pushed that week.

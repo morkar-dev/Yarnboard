@@ -16,6 +16,7 @@ import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 import en from "./en.json";
 import he from "./he.json";
+import { languageFromPath } from "./urls";
 
 export const SUPPORTED_LANGUAGES = ["en", "he"] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
@@ -27,9 +28,12 @@ function isSupportedLanguage(value: string | null): value is SupportedLanguage {
   return SUPPORTED_LANGUAGES.includes(value as SupportedLanguage);
 }
 
-/** Reads the persisted choice, falling back to English -- there's no
- * browser-language auto-detection, so a first-time visitor always sees
- * English until they explicitly switch (see NavBar's language toggle).
+/** Reads the last language this browser used, falling back to English --
+ * there's no browser-language auto-detection, so a first-time visitor
+ * always sees English until they explicitly switch (see NavBar's language
+ * toggle). The page's *current* language comes from its URL instead (see
+ * ./urls.ts); this is only used by main.tsx to send a returning
+ * Hebrew-preferring visitor from an English URL to its /he version.
  * Guards against localStorage being unavailable (privacy-mode browsers
  * that throw on access, or a test environment with no storage at all)
  * rather than letting the whole app fail to boot over a language
@@ -57,7 +61,7 @@ i18next.use(initReactI18next).init({
     en: { translation: en },
     he: { translation: he },
   },
-  lng: getStoredLanguage(),
+  lng: languageFromPath(window.location.pathname),
   fallbackLng: "en",
   interpolation: {
     // React already escapes rendered text -- i18next's own HTML-escaping
@@ -66,13 +70,13 @@ i18next.use(initReactI18next).init({
   },
 });
 
-i18next.on("languageChanged", (language) => {
+export function storeLanguage(language: SupportedLanguage) {
   try {
     localStorage.setItem(STORAGE_KEY, language);
   } catch {
     // See getStoredLanguage's try/catch above -- losing the persisted
     // preference is fine, the app still works for this session.
   }
-});
+}
 
 export default i18next;
