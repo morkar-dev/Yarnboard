@@ -5,10 +5,10 @@ import { PHOTO_FILE, REQUIRED_FLAGS, SMOKE_PATTERN_TITLE, STATE_FILE } from "./f
 
 const { patternId } = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8")) as { patternId: number };
 
-// Longer than the backend's 75 s Gemini budget (translation.py's
+// Longer than the backend's 75 s AI budget (translation.py's
 // TOTAL_BUDGET_SECONDS), so a failure shows the API's own error body
 // rather than a client-side timeout.
-const GEMINI_TIMEOUT_MS = 120_000;
+const AI_TIMEOUT_MS = 120_000;
 
 test("health: required settings are present on this deployment", async ({ api }) => {
   const response = await api.get("/api/health");
@@ -20,7 +20,10 @@ test("health: required settings are present on this deployment", async ({ api })
     test.info().annotations.push({ type: name, description: String(value) });
   }
 
-  const missing = REQUIRED_FLAGS.filter((flag) => config[flag] !== true);
+  // `ai` (any AI provider) is newer than `gemini`: an API that hasn't
+  // deployed it yet still counts when it has Gemini.
+  const flags = { ...config, ai: config.ai ?? (config.groq === true || config.gemini === true) };
+  const missing = REQUIRED_FLAGS.filter((flag) => flags[flag] !== true);
   expect(
     missing,
     `Not set on this deployment: ${missing.join(", ")} ` +
@@ -41,23 +44,23 @@ test("paste text: preview parses a pattern", async ({ api }) => {
   expect((await response.json()).draft).toBeTruthy();
 });
 
-test("photo upload: Gemini reads a pattern photo", async ({ api }) => {
-  test.setTimeout(GEMINI_TIMEOUT_MS + 30_000);
+test("photo upload: the AI reads a pattern photo", async ({ api }) => {
+  test.setTimeout(AI_TIMEOUT_MS + 30_000);
   const response = await api.post("/api/patterns/preview-photos", {
     multipart: {
       photos: { name: "pattern-photo.jpg", mimeType: "image/jpeg", buffer: fs.readFileSync(PHOTO_FILE) },
     },
-    timeout: GEMINI_TIMEOUT_MS,
+    timeout: AI_TIMEOUT_MS,
   });
   expect(response.status(), await response.text()).toBe(200);
   const { draft } = await response.json();
   expect(JSON.stringify(draft).toLowerCase()).toContain("magic ring");
 });
 
-test("translation: Gemini translates a pattern to Hebrew", async ({ api }) => {
-  test.setTimeout(GEMINI_TIMEOUT_MS + 30_000);
+test("translation: the AI translates a pattern to Hebrew", async ({ api }) => {
+  test.setTimeout(AI_TIMEOUT_MS + 30_000);
   const response = await api.post(`/api/patterns/${patternId}/translate`, {
-    timeout: GEMINI_TIMEOUT_MS,
+    timeout: AI_TIMEOUT_MS,
   });
   expect(response.status(), await response.text()).toBe(200);
   const he = (await response.json()).pattern.translations?.he;

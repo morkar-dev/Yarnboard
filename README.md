@@ -310,8 +310,8 @@ One-time setup:
 2. In GitHub: **Settings > Secrets and variables > Actions**, add
    - secrets `SMOKE_DEV_EMAIL`, `SMOKE_DEV_PASSWORD`, `SMOKE_PROD_EMAIL`,
      `SMOKE_PROD_PASSWORD`
-   - the variable `SMOKE_PROD_URL` (the prod site's address), and
-     optionally `SMOKE_DEV_URL`, if the dev site moves from
+   - optionally the variables `SMOKE_PROD_URL` / `SMOKE_DEV_URL`, if a
+     site moves from `https://www.yarnboard.net` /
      `https://yarnboard-dev.morkar9696.workers.dev`
 
 To run it by hand, put `SMOKE_BASE_URL`, `SMOKE_EMAIL` and

@@ -40,8 +40,8 @@ async function waitForApi(api: APIRequestContext) {
 }
 
 /** Deletes leftovers from earlier runs, then creates a fresh pattern --
- * fresh so translation really calls Gemini (an already-translated
- * pattern is answered from the database). global-teardown.ts deletes it. */
+ * fresh so translation really calls the AI, Groq or Gemini (an
+ * already-translated pattern is answered from the database). global-teardown.ts deletes it. */
 async function createFreshSmokePattern(api: APIRequestContext, username: string): Promise<number> {
   await deleteSmokePatterns(api);
 
