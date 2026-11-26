@@ -27,6 +27,7 @@ import AttributionTag from "../components/AttributionTag";
 import CollapsibleCard from "../components/CollapsibleCard";
 import { NoteIcon } from "../components/Icons";
 import ChartTracker from "../components/ChartTracker";
+import PatternChartGrid from "../components/PatternChartGrid";
 import MaterialsChecklist from "../components/MaterialsChecklist";
 import PatternChecklist from "../components/PatternChecklist";
 import PatternVisibilityPanel from "../components/PatternVisibilityPanel";
@@ -50,7 +51,7 @@ function looksHebrew(text: string): boolean {
 
 export default function PatternDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { t, i18n } = useTranslation();
   const getErrorMessage = useApiErrorMessage();
   const [pattern, setPattern] = useState<Pattern | null>(null);
@@ -127,7 +128,15 @@ export default function PatternDetailPage() {
       {pattern.can_manage && <PatternVisibilityPanel pattern={pattern} onPatternChange={setPattern} />}
 
       {pattern.chart_grid ? (
-        <ChartTracker patternId={pattern.id} grid={pattern.chart_grid} />
+        authLoading ? (
+          // Not markable until we know whose marks these are: the tracker
+          // reads the account's marks or this browser's guest ones.
+          <PatternChartGrid grid={pattern.chart_grid} />
+        ) : (
+          // Keyed by account, so logging in or out starts from that
+          // account's own marks.
+          <ChartTracker key={user?.id ?? "guest"} patternId={pattern.id} grid={pattern.chart_grid} />
+        )
       ) : (
         pattern.has_photo && (
           <img

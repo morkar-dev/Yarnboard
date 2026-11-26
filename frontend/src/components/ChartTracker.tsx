@@ -7,8 +7,13 @@
  * Marks are saved like checklist progress (see PatternChecklist):
  *   - logged-in users: to their account (PUT /api/patterns/<id>/chart-marks,
  *     the whole set). Changes are applied at once and saved after a short
- *     pause, so a drag across many cells is one request; if saving fails
- *     the marks go back to what was last saved and an error shows.
+ *     pause, so a drag across many cells is one request; a save still
+ *     waiting when the page closes or the tracker unmounts is sent right
+ *     away. If saving fails the marks go back to what was last saved and
+ *     an error shows.
+ * The parent mounts this only once the login state is known, keyed by
+ * account (see PatternDetailPage), so it always starts from the right
+ * person's marks.
  *   - guests: to this browser only (utils/guestChartMarks).
  * The zoom level is remembered per browser for every chart.
  */
@@ -53,23 +58,36 @@ export default function ChartTracker({ patternId, grid }: Props) {
   const [saveError, setSaveError] = useState<string | null>(null);
   // What the server has, to fall back to when a save fails.
   const saved = useRef<Set<number>>(new Set(grid.marked_cells ?? []));
-  const pendingSave = useRef<number | null>(null);
+  // A save waiting for the pause to end: its timer and the marks it sends.
+  const pending = useRef<{ timer: number; cells: Set<number> } | null>(null);
 
-  useEffect(
-    () => () => {
-      if (pendingSave.current !== null) window.clearTimeout(pendingSave.current);
-    },
-    [],
-  );
+  // Send a waiting save now -- when the page is hidden or closed, or the
+  // tracker goes away -- instead of losing it with its timer.
+  useEffect(() => {
+    function flush() {
+      if (!pending.current) return;
+      window.clearTimeout(pending.current.timer);
+      const cells = [...pending.current.cells];
+      pending.current = null;
+      saveChartMarks(patternId, cells, { keepalive: true }).catch(() => {
+        // The page is going away; there's nothing left to show an error on.
+      });
+    }
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [patternId]);
 
   function persist(next: Set<number>) {
     if (!user) {
       setGuestChartMarks(patternId, shape, [...next].sort((a, b) => a - b));
       return;
     }
-    if (pendingSave.current !== null) window.clearTimeout(pendingSave.current);
-    pendingSave.current = window.setTimeout(async () => {
-      pendingSave.current = null;
+    if (pending.current) window.clearTimeout(pending.current.timer);
+    const timer = window.setTimeout(async () => {
+      pending.current = null;
       try {
         const response = await saveChartMarks(patternId, [...next]);
         saved.current = new Set(response.marked_cells);
@@ -79,6 +97,7 @@ export default function ChartTracker({ patternId, grid }: Props) {
         setSaveError(t("chartTracker.saveFailed"));
       }
     }, SAVE_DELAY_MS);
+    pending.current = { timer, cells: next };
   }
 
   function handleMarkCells(cells: number[], mark: boolean) {

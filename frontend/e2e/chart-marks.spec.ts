@@ -102,6 +102,19 @@ test.describe("logged in", () => {
     await expect.poll(() => store.marks).toEqual([]);
   });
 
+  test("a mark made just before leaving the page is still saved", async ({ page }) => {
+    const patternId = await newPattern("Chart Leave Early");
+    const store = { marks: [] as number[], saves: [] as number[][] };
+    await fakeChart(page, patternId, store);
+    await page.goto(`/pattern/${patternId}`);
+
+    await cell(page, 5).click();
+    // Leave inside the save's pause: the waiting save is sent on the way out.
+    await page.getByRole("link", { name: "Community" }).first().click();
+
+    await expect.poll(() => store.marks).toEqual([5]);
+  });
+
   test("a failed save puts the marks back and says so", async ({ page }) => {
     const patternId = await newPattern("Chart Save Fails");
     const store = { marks: [] as number[], saves: [] as number[][] };
