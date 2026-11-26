@@ -301,6 +301,20 @@
     "counterProgress": "{{done}} / {{count}} rows (next: row {{row}})",
     "counterDone": "All {{count}} rows done"
   },
+  "chartTracker": {
+    "label": "Pattern chart: tap a cell to mark it as done",
+    "zoom": "Cell size",
+    "zoom1": "S",
+    "zoom2": "M",
+    "zoom3": "L",
+    "dragToMark": "Drag to mark",
+    "count": "{{marked}} / {{total}} marked",
+    "clear": "Clear marks",
+    "clearConfirm": "Unmark every cell on this chart?",
+    "saveFailed": "Couldn't save your marks. Please try again.",
+    "hint": "Tap a cell to mark it as done; tap again to unmark it. With a mouse, drag to mark many cells; on a phone, turn on Drag to mark first.",
+    "guestNotice": "As a guest, marks are saved on this device only."
+  },
   "editPattern": {
     "title": "Edit Pattern",
     "photoLabel": "Photo of the finished piece",

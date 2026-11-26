@@ -38,7 +38,7 @@ import uuid
 from .. import photo, transcription, translation
 from ..email import send_pattern_shared_email, send_pattern_updated_email
 from ..extensions import db, limiter
-from ..models import Pattern, PatternShare, User, UserPatternProgress
+from ..models import Pattern, PatternShare, User, UserChartProgress, UserPatternProgress
 from ..notifications import create_in_app_notification, is_enabled
 from ..scraper import (
     MANUAL_SOURCE_PREFIX,
@@ -1761,6 +1761,76 @@ def toggle_progress(pattern_id):
 
     return jsonify({"completed_steps": progress.completed_steps}), 200
 
+
+@patterns_bp.route("/<int:pattern_id>/chart-marks", methods=["PUT"])
+def save_chart_marks(pattern_id):
+    """
+    Replace the current user's marked cells on this pattern's chart grid
+    (see UserChartProgress). The whole set is sent each time rather than
+    one cell at a time, since a drag marks many cells at once; an empty
+    list clears every mark.
+
+    Body: {"marked_cells": [<row-major cell index>, ...]}. Duplicates are
+    dropped and the list is stored sorted.
+    ---
+    tags: [Patterns]
+    parameters:
+      - in: path
+        name: pattern_id
+        type: integer
+        required: true
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required: [marked_cells]
+          properties:
+            marked_cells:
+              type: array
+              items: {type: integer}
+    responses:
+      200:
+        description: Marks saved; returns the stored list
+      400:
+        description: The pattern has no chart, or a cell index is invalid
+      401:
+        description: Not logged in
+      404:
+        description: No such pattern, or not visible to this user
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    user = User.query.get(user_id)
+    pattern = Pattern.query.get_or_404(pattern_id)
+    if not _can_view(user, pattern):
+        return jsonify({"error": "Pattern not found.", "code": "pattern_not_found"}), 404
+    if not pattern.chart_grid_data:
+        return jsonify({"error": "This pattern has no chart.", "code": "no_chart"}), 400
+
+    cells = (request.get_json(silent=True) or {}).get("marked_cells")
+    cell_count = len(pattern.chart_grid_data)
+    if not isinstance(cells, list) or not all(
+        isinstance(cell, int) and not isinstance(cell, bool) and 0 <= cell < cell_count for cell in cells
+    ):
+        return jsonify({
+            "error": f"marked_cells must be a list of cell indices from 0 to {cell_count - 1}.",
+            "code": "invalid_chart_marks",
+        }), 400
+    marked = sorted(set(cells))
+
+    row = UserChartProgress.query.filter_by(user_id=user_id, pattern_id=pattern_id).first()
+    if row is None:
+        row = UserChartProgress(user_id=user_id, pattern_id=pattern_id)
+        db.session.add(row)
+    row.marked_cells = marked
+    row.grid_shape = pattern.chart_grid_shape
+    flag_modified(row, "marked_cells")
+    db.session.commit()
+
+    return jsonify({"marked_cells": marked}), 200
 
 @patterns_bp.route("/<int:pattern_id>/progress", methods=["DELETE"])
 def clear_progress(pattern_id):

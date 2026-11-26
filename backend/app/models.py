@@ -251,6 +251,22 @@ class Pattern(db.Model):
             db.or_(Pattern.is_public.is_(True), Pattern.uploader_id == uploader_id),
         ).first()
 
+    @property
+    def chart_grid_shape(self) -> str:
+        """"<columns>x<rows>" -- what UserChartProgress.grid_shape is
+        compared against."""
+        return f"{self.chart_grid_columns}x{self.chart_grid_rows}"
+
+    def chart_marks_for(self, user_id) -> list[int]:
+        """`user_id`'s marked chart cells, or [] when there are none, the
+        viewer is anonymous, or they were saved for a different shape."""
+        if user_id is None or not self.chart_grid_data:
+            return []
+        row = UserChartProgress.query.filter_by(user_id=user_id, pattern_id=self.id).first()
+        if row is None or row.grid_shape != self.chart_grid_shape:
+            return []
+        return list(row.marked_cells or [])
+
     def to_dict(self, current_user_id=None):
         """
         Serialize this pattern for the API.
@@ -322,6 +338,10 @@ class Pattern(db.Model):
                 "row_count": self.chart_grid_rows,
                 "palette": self.chart_palette,
                 "cells": list(self.chart_grid_data),
+                # This user's marked cells (see UserChartProgress); always
+                # empty for an anonymous viewer, whose marks live in their
+                # browser instead.
+                "marked_cells": self.chart_marks_for(current_user_id),
             } if self.chart_grid_data else None,
             "translations": {
                 "he": {
@@ -417,6 +437,41 @@ class UserPatternProgress(db.Model):
         row that's technically stale but represents no real engagement
         (e.g. a saved-but-never-opened pattern)."""
         return any(any(flags) for flags in (self.completed_steps or {}).values())
+
+
+class UserChartProgress(db.Model):
+    """
+    One user's marked cells on one pattern's chart grid (a Stitch Fiddle
+    chart, see Pattern.chart_grid_*): the crafter ticks off each stitch
+    as they work it, like checklist steps (UserPatternProgress), so the
+    marks follow them across devices.
+
+    `marked_cells` is a sorted list of row-major cell indices into
+    chart_grid_data. `grid_shape` is the chart's "<columns>x<rows>" when
+    the marks were saved: indices only mean something for that shape, so
+    marks saved against a different one are treated as empty (see
+    Pattern.to_dict and save_chart_marks). Charts aren't re-imported
+    today, so this is a guard rather than an expected path.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    pattern_id = db.Column(db.Integer, db.ForeignKey("pattern.id"), nullable=False)
+    marked_cells = db.Column(db.JSON, nullable=False, default=list)
+    grid_shape = db.Column(db.String(20), nullable=False)
+    updated_at = db.Column(
+        db.DateTime, server_default=db.func.now(), onupdate=db.func.now()
+    )
+
+    user = db.relationship("User", backref=db.backref("chart_progress_entries", lazy=True))
+    pattern = db.relationship(
+        "Pattern",
+        backref=db.backref("chart_progress_entries", lazy=True, cascade="all, delete-orphan"),
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "pattern_id", name="uq_user_chart_progress"),
+    )
 
 
 class StitchFiddleLink(db.Model):
