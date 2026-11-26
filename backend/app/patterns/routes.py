@@ -295,9 +295,9 @@ def preview_pattern_from_text():
 def preview_pattern_from_photos():
     """
     Read a pattern out of up to 5 photos (multipart `photos`, in page
-    order) with Gemini and return a reviewable draft -- no DB write. Same
-    response shape as /preview. `url` (the original source) is optional.
-    Rate-limited per IP since every call is a paid Gemini request.
+    order) with the AI (Groq, falling back to Gemini) and return a
+    reviewable draft -- no DB write. Same response shape as /preview.
+    `url` (the original source) is optional. Rate-limited per IP since every call spends free-tier AI quota.
     ---
     tags: [Patterns]
     consumes: [multipart/form-data]
@@ -319,7 +319,7 @@ def preview_pattern_from_photos():
       422:
         description: No readable pattern text in the photos
       502:
-        description: The photos couldn't be read (Gemini unavailable)
+        description: The photos couldn't be read (no AI provider available)
     """
     user_id, error = _require_login()
     if error:
@@ -1035,7 +1035,7 @@ def unshare_pattern(pattern_id, share_user_id):
 @patterns_bp.route("/<int:pattern_id>/translate", methods=["POST"])
 def translate_pattern(pattern_id):
     """
-    Auto-translate this pattern's content to Hebrew via Gemini (see
+    Auto-translate this pattern's content to Hebrew via the AI providers (see
     ../translation.py) and persist it as an unreviewed draft. No-ops
     (returns the pattern unchanged) if a translation already exists --
     translation happens once per pattern, never overwriting an existing
@@ -1048,7 +1048,7 @@ def translate_pattern(pattern_id):
     authoritative English content, so it doesn't need the stricter
     _can_edit permission that editing/photo routes use. It does still
     need _can_view, though: without it, anyone could probe a private
-    pattern's existence and burn a Gemini API call on content they can't
+    pattern's existence and burn an AI call on content they can't
     otherwise see.
     ---
     tags: [Patterns]
@@ -1091,7 +1091,7 @@ def translate_pattern(pattern_id):
         )
     except translation.TranslationError as exc:
         # Details go to the server log, not the client: the message can
-        # carry upstream (Gemini) error text.
+        # carry upstream (Groq or Gemini) error text.
         current_app.logger.error("Translating pattern %s failed: %s", pattern.id, exc)
         return jsonify({
             "error": "We couldn't translate this pattern right now. Please try again in a moment.",
@@ -1163,7 +1163,7 @@ def translate_pattern_to_english(pattern_id):
         )
     except translation.TranslationError as exc:
         # Details go to the server log, not the client: the message can
-        # carry upstream (Gemini) error text.
+        # carry upstream (Groq or Gemini) error text.
         current_app.logger.error("Translating pattern %s failed: %s", pattern.id, exc)
         return jsonify({
             "error": "We couldn't translate this pattern right now. Please try again in a moment.",

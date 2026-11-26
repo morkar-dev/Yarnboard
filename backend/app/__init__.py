@@ -566,6 +566,10 @@ def create_app(config_overrides: dict | None = None):
         return {
             "status": "ok",
             "config": {
+                # "ai": at least one provider for photo reading and
+                # translation (see translation._call_model).
+                "ai": bool(os.environ.get("GROQ_API_KEY") or os.environ.get("GEMINI_API_KEY")),
+                "groq": bool(os.environ.get("GROQ_API_KEY")),
                 "gemini": bool(os.environ.get("GEMINI_API_KEY")),
                 "email_onboarding": bool(os.environ.get("RESEND_ONBOARDING")),
                 "email_notifications": bool(os.environ.get("RESEND_NOTIFICATIONS")),

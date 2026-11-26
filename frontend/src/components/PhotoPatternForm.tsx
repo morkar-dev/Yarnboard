@@ -1,7 +1,7 @@
 /**
  * "Photos" tab of SubmitPatternPage: up to MAX_PHOTOS pictures of a
- * printed or handwritten pattern, read by Gemini into a draft (POST
- * /api/patterns/preview-photos). Photos are shrunk in the browser first
+ * printed or handwritten pattern, read by the AI (Groq or Gemini) into a
+ * draft (POST /api/patterns/preview-photos). Photos are shrunk in the browser first
  * (utils/resizeImage) -- that also makes iPhone HEIC photos work -- and the
  * first one is handed on to the review page to become the pattern's
  * picture. `accept="image/*"` lets phones offer the camera directly.

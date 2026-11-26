@@ -199,19 +199,35 @@ def test_preview_photos_with_no_readable_text(client, monkeypatch):
 
 
 def test_transcription_sends_each_photo_to_gemini_as_inline_jpeg(monkeypatch):
+    """With only Gemini configured, each photo goes to it as an inline JPEG
+    part, with the {"text"} schema."""
+    import json as _json
+
+    from app import translation
+
     captured = {}
 
-    def fake_call(prompt, *, extra_parts=None, schema=None):
-        captured["parts"] = extra_parts
-        captured["schema"] = schema
-        return {"text": "  Hat\nCast on.  "}
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
 
-    monkeypatch.setattr(transcription, "_call_gemini", fake_call)
+        def json(self):
+            return {"candidates": [{"content": {"parts": [{"text": _json.dumps({"text": "  Hat\nCast on.  "})}]}}]}
+
+    def fake_post(url, headers, json, timeout):
+        captured["url"] = url
+        captured["body"] = json
+        return FakeResponse()
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setattr(translation.requests, "post", fake_post)
     images = [_jpeg(), _jpeg((0, 0, 0))]
     assert transcription.transcribe_pattern_photos(images) == "Hat\nCast on."
-    assert [p["inline_data"]["mime_type"] for p in captured["parts"]] == ["image/jpeg", "image/jpeg"]
-    assert base64.b64decode(captured["parts"][1]["inline_data"]["data"]) == images[1]
-    assert captured["schema"]["required"] == ["text"]
+    parts = captured["body"]["contents"][0]["parts"][1:]
+    assert "generativelanguage.googleapis.com" in captured["url"]
+    assert [p["inline_data"]["mime_type"] for p in parts] == ["image/jpeg", "image/jpeg"]
+    assert base64.b64decode(parts[1]["inline_data"]["data"]) == images[1]
+    assert captured["body"]["generationConfig"]["responseSchema"]["required"] == ["text"]
 
 
 # --- Saving without a source link -----------------------------------------
