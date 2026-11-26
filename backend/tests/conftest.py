@@ -32,6 +32,14 @@ from app import create_app
 from app.extensions import db as _db
 
 
+@pytest.fixture(autouse=True)
+def _no_real_ai_providers(monkeypatch):
+    """No test reaches a real AI provider, even when the developer's shell
+    or .env has keys: tests that need one set its key themselves."""
+    for name in ("GROQ_API_KEY", "AI_PROVIDERS", "GROQ_MODEL", "GROQ_VISION_MODEL", "GROQ_MAX_IMAGES"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture()
 def app():
     db_fd, db_path = tempfile.mkstemp(suffix=".db")

@@ -139,6 +139,7 @@ jobs:
       RESEND_NOTIFICATIONS: ""
       RESEND_NEWSLETTER: ""
       GEMINI_API_KEY: ""
+      GROQ_API_KEY: ""
       # No venv here: pip installs into the runner's Python, so `flask` is on PATH.
       E2E_FLASK_BIN: flask
       PLAYWRIGHT_JUNIT_OUTPUT_NAME: junit.xml

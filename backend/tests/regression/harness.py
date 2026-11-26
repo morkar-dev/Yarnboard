@@ -22,14 +22,14 @@ DEFAULT_INPUT = {
     "pdf": "pattern.pdf",      # a PDF (also /preview-upload)
     "text": "pattern.txt",     # pasted text (/preview-text)
     "url": "page.html",        # snapshot of the live page (record.py snapshot)
-    "photos": "transcript.txt",  # Gemini's transcription (record.py transcribe)
+    "photos": "transcript.txt",  # the AI's transcription (record.py transcribe)
 }
 KINDS = tuple(DEFAULT_INPUT)
 
 # Live mode re-does the step that depends on the outside world -- fetching
-# the real page, or asking Gemini to read the photos -- instead of using
+# the real page, or asking the AI to read the photos -- instead of using
 # the saved snapshot/transcript. Opt-in: needs network (and for photos a
-# GEMINI_API_KEY), and a live site can change at any time.
+# GROQ_API_KEY or GEMINI_API_KEY), and a live site can change at any time.
 LIVE_KINDS = ("url", "photos")
 PHOTO_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif")
 
@@ -165,12 +165,13 @@ def parse(case: Case, *, live: bool = False) -> dict:
 
 
 def transcribe(case: Case) -> str:
-    """Ask Gemini to read this case's photos, exactly as POST
-    /api/patterns/preview-photos does (same normalizing, same prompt)."""
+    """Ask the AI providers (Groq, then Gemini -- see AI_PROVIDERS) to read
+    this case's photos, exactly as POST /api/patterns/preview-photos does
+    (same normalizing, same prompt)."""
     from app import photo, transcription
 
-    if not os.environ.get("GEMINI_API_KEY"):
-        raise CaseError("GEMINI_API_KEY isn't set -- needed to read photos")
+    if not (os.environ.get("GROQ_API_KEY") or os.environ.get("GEMINI_API_KEY")):
+        raise CaseError("Neither GROQ_API_KEY nor GEMINI_API_KEY is set -- one is needed to read photos")
     photos = case.photo_files
     if not photos:
         raise CaseError(f"{case.id}: no photos in the case folder (add {', '.join(PHOTO_SUFFIXES)} files)")

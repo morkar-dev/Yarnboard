@@ -51,18 +51,31 @@ hot-reload -- see Local setup below.
   (`parse_pattern_text` in `scraper.py`: first line is the title,
   `Heading:` / `# Heading` lines start sections and parts) or
   photographed -- up to 5 photos, shrunk in the browser, then transcribed
-  by Gemini (`backend/app/transcription.py`, same `GEMINI_API_KEY`) into
-  that same text format. Both land on the usual review draft. The source
+  by the AI provider (`backend/app/transcription.py`, see Translation
+  below) into that same text format. Both land on the usual review draft. The source
   link is optional for these; without one the pattern is stored with a
   `manual:<uuid>` placeholder URL and `has_source_link: false`.
 - **Translation & RTL**: a pattern can be machine-translated in either
   direction -- an English-primary pattern gets a Hebrew overlay, or a
-  Hebrew-primary one gets an English overlay -- via the Gemini API
-  (`backend/app/translation.py`, requires `GEMINI_API_KEY`). When the
-  main model (`gemini-flash-latest`) is overloaded, rate-limited or too
-  slow, the same request is retried on `gemini-flash-lite-latest`; set
-  `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` on a service to change either
-  without a code change. A translation is reviewable/correctable on the pattern's Edit page and
+  Hebrew-primary one gets an English overlay (`backend/app/translation.py`).
+  Photo reading and translation both use free-tier AI APIs, tried in
+  order (`AI_PROVIDERS`, default `groq,gemini`; a provider without its
+  key is skipped, at least one key is required):
+  - **Groq** (`GROQ_API_KEY`, free at https://console.groq.com, no card:
+    about 30 requests a minute and 1,000 a day per model). Translation
+    uses `openai/gpt-oss-120b` with strict JSON output, photos use the
+    vision model `qwen/qwen3.8-27b` (a Groq Preview model) for up to 3
+    photos; change them with `GROQ_MODEL` / `GROQ_VISION_MODEL` /
+    `GROQ_MAX_IMAGES`. Any Groq failure (busy, over quota, slow, bad
+    answer) or more photos than it takes moves on to Gemini. With Groq
+    as the only provider, more than 3 photos at once are refused.
+  - **Gemini** (`GEMINI_API_KEY`). When its main model
+    (`gemini-flash-latest`) is overloaded, rate-limited or too slow, the
+    same request is retried on `gemini-flash-lite-latest`; set
+    `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` to change either.
+
+  All attempts share one 75 s budget. Set `AI_PROVIDERS=gemini` on a
+  service to switch Groq off without a deploy. A translation is reviewable/correctable on the pattern's Edit page and
   marked reviewed once a person touches it. Content fields throughout the
   app use `dir="auto"` so right-to-left text displays correctly
   regardless of which language the UI chrome itself is in.
@@ -277,16 +290,17 @@ repository was hosted there.
 
 `frontend/e2e-smoke/` checks a live site end to end, through the
 Cloudflare Worker like a real visitor: `/api/health` settings, opening a
-pattern logged in, pasting text, a real Gemini photo read and a real
-Gemini translation. It waits out Render's free-tier wake-up first. Each
+pattern logged in, pasting text, a real AI photo read and a real AI
+translation (Groq or Gemini, see Translation above). It waits out Render's free-tier wake-up first. Each
 run creates one private pattern in the test account and deletes it at
 the end.
 
 `/api/health` reports which settings a deployment has, as true/false
-only: `gemini`, `email_onboarding`, `email_notifications`, `proxy_secret`,
+only: `ai` (at least one AI key), `groq`, `gemini`, `email_onboarding`,
+`email_notifications`, `proxy_secret`,
 and `proxy_verified` (this request came through the Worker with a
 matching `PROXY_SHARED_SECRET`). The smoke test fails if a required one
-is false -- dev requires `gemini`, `proxy_secret`, `proxy_verified`; prod
+is false -- dev requires `ai`, `proxy_secret`, `proxy_verified`; prod
 also requires both email keys.
 
 One-time setup:

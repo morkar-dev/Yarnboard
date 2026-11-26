@@ -38,7 +38,7 @@ export const SMOKE_PASSWORD = () => required("SMOKE_PASSWORD");
 
 /** Health flags that must be true for the run to pass. The rest are
  * still printed, just not enforced (dev may deliberately send no email). */
-export const REQUIRED_FLAGS = (process.env.SMOKE_REQUIRE ?? "gemini,proxy_secret,proxy_verified")
+export const REQUIRED_FLAGS = (process.env.SMOKE_REQUIRE ?? "ai,proxy_secret,proxy_verified")
   .split(",")
   .map((flag) => flag.trim())
   .filter(Boolean);

@@ -2,8 +2,8 @@ name: Smoke
 
 # Smoke tests against the deployed sites (frontend/e2e-smoke/, see the
 # README's "Smoke tests against the deployed sites"): health settings,
-# opening a pattern logged in, pasted text, a real Gemini photo read and
-# translation, all through the Cloudflare Worker like a real visitor.
+# opening a pattern logged in, pasted text, a real AI photo read and
+# translation (Groq or Gemini), all through the Cloudflare Worker like a real visitor.
 #
 #   - Push to dev / main: the dev / prod site, 10 minutes later (time for
 #     Render and Cloudflare to deploy).
@@ -53,7 +53,7 @@ jobs:
       SMOKE_API_URL: ${{ vars.SMOKE_DEV_API_URL || 'https://yarnboard-dev-api.onrender.com' }}
       SMOKE_EMAIL: ${{ secrets.SMOKE_DEV_EMAIL }}
       SMOKE_PASSWORD: ${{ secrets.SMOKE_DEV_PASSWORD }}
-      SMOKE_REQUIRE: gemini,proxy_secret,proxy_verified
+      SMOKE_REQUIRE: ai,proxy_secret,proxy_verified
     steps:
       - name: Check settings
         run: |
@@ -100,7 +100,7 @@ jobs:
       SMOKE_API_URL: ${{ vars.SMOKE_PROD_API_URL || 'https://yarnboard.onrender.com' }}
       SMOKE_EMAIL: ${{ secrets.SMOKE_PROD_EMAIL }}
       SMOKE_PASSWORD: ${{ secrets.SMOKE_PROD_PASSWORD }}
-      SMOKE_REQUIRE: gemini,email_onboarding,email_notifications,proxy_secret,proxy_verified
+      SMOKE_REQUIRE: ai,email_onboarding,email_notifications,proxy_secret,proxy_verified
     steps:
       - name: Check settings
         run: |

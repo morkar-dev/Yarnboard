@@ -183,8 +183,8 @@ export function previewPatternFromText(text: string, url: string) {
   });
 }
 
-/** Photos of a pattern, in page order, read by Gemini into a draft (see
- * POST /api/patterns/preview-photos). Shrink them first (utils/
+/** Photos of a pattern, in page order, read by the AI (Groq or Gemini)
+ * into a draft (see POST /api/patterns/preview-photos). Shrink them first (utils/
  * resizeImage) -- the server caps a whole request at 5MB. */
 export function previewPatternFromPhotos(photos: File[], url: string) {
   const formData = new FormData();
@@ -348,7 +348,7 @@ export function updatePattern(patternId: number, payload: PatternEditPayload) {
 }
 
 /**
- * Auto-translate this pattern to Hebrew via Gemini (see
+ * Auto-translate this pattern to Hebrew via the AI providers (see
  * backend/app/translation.py) and persist it as an unreviewed draft.
  * No-ops server-side (returns the pattern unchanged) if a translation
  * already exists -- safe to call speculatively. Slow (a real LLM call),
