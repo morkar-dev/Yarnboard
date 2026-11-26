@@ -26,6 +26,7 @@ import { fetchPattern, resolvePhotoUrl, translatePattern, translatePatternToEngl
 import AttributionTag from "../components/AttributionTag";
 import CollapsibleCard from "../components/CollapsibleCard";
 import { NoteIcon } from "../components/Icons";
+import ChartRefreshButton from "../components/ChartRefreshButton";
 import ChartTracker from "../components/ChartTracker";
 import PatternChartGrid from "../components/PatternChartGrid";
 import MaterialsChecklist from "../components/MaterialsChecklist";
@@ -127,15 +128,23 @@ export default function PatternDetailPage() {
 
       {pattern.can_manage && <PatternVisibilityPanel pattern={pattern} onPatternChange={setPattern} />}
 
+      {pattern.chart_grid && pattern.can_edit && pattern.source_domain === "stitchfiddle.com" && (
+        <ChartRefreshButton patternId={pattern.id} onRefreshed={setPattern} />
+      )}
+
       {pattern.chart_grid ? (
         authLoading ? (
           // Not markable until we know whose marks these are: the tracker
           // reads the account's marks or this browser's guest ones.
           <PatternChartGrid grid={pattern.chart_grid} />
         ) : (
-          // Keyed by account, so logging in or out starts from that
-          // account's own marks.
-          <ChartTracker key={user?.id ?? "guest"} patternId={pattern.id} grid={pattern.chart_grid} />
+          // Keyed by account and chart size, so logging in or out -- or a
+          // refresh that resized the chart -- starts from the right marks.
+          <ChartTracker
+            key={`${user?.id ?? "guest"}-${pattern.chart_grid.column_count}x${pattern.chart_grid.row_count}`}
+            patternId={pattern.id}
+            grid={pattern.chart_grid}
+          />
         )
       ) : (
         pattern.has_photo && (

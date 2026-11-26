@@ -15,8 +15,9 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy.exc import IntegrityError
 
 from .. import stitchfiddle
-from ..extensions import db
-from ..models import Pattern, StitchFiddleLink
+from ..extensions import db, limiter
+from ..models import Pattern, StitchFiddleLink, User
+from ..patterns.routes import _can_edit
 from ..stitchfiddle import StitchFiddleError
 from ..utils import get_current_user_id
 
@@ -261,3 +262,93 @@ def import_link(link_id):
         "message": "Chart imported.",
         "pattern": pattern.to_dict(current_user_id=user_id),
     }), 201
+
+
+@stitch_fiddle_bp.route("/patterns/<int:pattern_id>/refresh", methods=["POST"])
+@limiter.limit("20 per hour")
+def refresh_pattern_chart(pattern_id):
+    """
+    Fetch a Stitch Fiddle pattern's chart again from its share link (the
+    pattern's original_url) and replace its grid and palette with what
+    Stitch Fiddle has now -- for when the chart was changed there after
+    the import.
+
+    Only the chart is replaced. The title, materials and anything else
+    stay as they are, since the user may have edited them here (same
+    reason import_link never overwrites an existing pattern). Anyone who
+    can edit the pattern can refresh it. People's marks on the chart (see
+    UserChartProgress) stay when the size is unchanged; if the size
+    changed they no longer fit, and every chart starts unmarked again.
+    Rate-limited: each refresh opens Stitch Fiddle in a headless browser
+    on the server.
+    ---
+    tags: [StitchFiddle]
+    parameters:
+      - in: path
+        name: pattern_id
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Chart fetched again; `changed` says whether anything differed
+      400:
+        description: Not a Stitch Fiddle chart pattern
+      401:
+        description: Not logged in
+      403:
+        description: Can't edit this pattern
+      404:
+        description: No such pattern
+      502:
+        description: Stitch Fiddle fetch failed (timeout, chart no longer public, etc.)
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    user = User.query.get(user_id)
+    pattern = Pattern.query.get_or_404(pattern_id)
+    if not _can_edit(user, pattern):
+        return jsonify({
+            "error": "You don't have permission to refresh this pattern.",
+            "code": "pattern_forbidden",
+        }), 403
+    not_a_chart = jsonify({
+        "error": "This pattern isn't a Stitch Fiddle chart.",
+        "code": "not_stitchfiddle_chart",
+    }), 400
+    if not pattern.chart_grid_data:
+        return not_a_chart
+    try:
+        stitchfiddle.parse_share_url(pattern.original_url)
+    except StitchFiddleError:
+        return not_a_chart
+
+    try:
+        chart = stitchfiddle.fetch_chart(pattern.original_url)
+        grid_bytes = stitchfiddle.decode_grid(
+            chart["grid_rows_field"], chart["column_count"], chart["row_count"]
+        )
+        palette = stitchfiddle.palette_to_json(chart["palette"])
+    except StitchFiddleError as exc:
+        # Raw message, as in import_link: it varies per failure.
+        return jsonify({"error": str(exc), "code": "stitchfiddle_fetch_error"}), 502
+
+    changed = (
+        bytes(pattern.chart_grid_data) != grid_bytes
+        or pattern.chart_grid_columns != chart["column_count"]
+        or pattern.chart_grid_rows != chart["row_count"]
+        or pattern.chart_palette != palette
+    )
+    if changed:
+        pattern.chart_grid_data = grid_bytes
+        pattern.chart_grid_columns = chart["column_count"]
+        pattern.chart_grid_rows = chart["row_count"]
+        pattern.chart_palette = palette
+        db.session.commit()
+
+    return jsonify({
+        "message": "Chart updated." if changed else "The chart is already up to date.",
+        "changed": changed,
+        "pattern": pattern.to_dict(current_user_id=user_id),
+    }), 200

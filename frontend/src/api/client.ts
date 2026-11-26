@@ -436,6 +436,17 @@ export function deleteStitchFiddleLink(linkId: number) {
 /** Fetches the chart from Stitch Fiddle (slow -- launches a real headless
  * browser server-side) and turns it into a Pattern, or returns the
  * existing one if this link was already imported. */
+/** Fetches an imported chart again from its Stitch Fiddle share link and
+ * replaces the pattern's grid and colours (title and materials stay as
+ * they are). Slow like importStitchFiddleLink. `changed` is false when the
+ * chart was already up to date. */
+export function refreshStitchFiddleChart(patternId: number) {
+  return request<{ message: string; changed: boolean; pattern: Pattern }>(
+    `/api/stitch-fiddle/patterns/${patternId}/refresh`,
+    { method: "POST" },
+  );
+}
+
 export function importStitchFiddleLink(linkId: number) {
   return request<{ message: string; pattern: Pattern }>(
     `/api/stitch-fiddle/links/${linkId}/import`,
