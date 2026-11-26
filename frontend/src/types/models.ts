@@ -138,6 +138,9 @@ export interface ChartGrid {
   row_count: number;
   palette: ChartGridPaletteEntry[];
   cells: number[];
+  /** The current user's marked cells (row-major indices, sorted); always
+   * empty for a guest, whose marks are kept in the browser instead. */
+  marked_cells?: number[];
 }
 
 /** One pattern the current user has stale progress on -- drives the

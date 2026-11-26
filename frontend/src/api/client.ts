@@ -264,6 +264,15 @@ export function fetchSharedWithMe() {
   return request<Pattern[]>("/api/patterns/shared-with-me");
 }
 
+/** Replaces the current user's marked cells on this pattern's chart grid
+ * (the whole set each time; [] clears them). See ChartTracker. */
+export function saveChartMarks(patternId: number, markedCells: number[]) {
+  return request<{ marked_cells: number[] }>(`/api/patterns/${patternId}/chart-marks`, {
+    method: "PUT",
+    body: JSON.stringify({ marked_cells: markedCells }),
+  });
+}
+
 /** Unchecks every step of this pattern for the current user only. */
 export function clearProgress(patternId: number) {
   return request<{ completed_steps: Record<string, boolean[]> }>(`/api/patterns/${patternId}/progress`, {

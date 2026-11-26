@@ -26,7 +26,7 @@ import { fetchPattern, resolvePhotoUrl, translatePattern, translatePatternToEngl
 import AttributionTag from "../components/AttributionTag";
 import CollapsibleCard from "../components/CollapsibleCard";
 import { NoteIcon } from "../components/Icons";
-import PatternChartGrid from "../components/PatternChartGrid";
+import ChartTracker from "../components/ChartTracker";
 import MaterialsChecklist from "../components/MaterialsChecklist";
 import PatternChecklist from "../components/PatternChecklist";
 import PatternVisibilityPanel from "../components/PatternVisibilityPanel";
@@ -127,7 +127,7 @@ export default function PatternDetailPage() {
       {pattern.can_manage && <PatternVisibilityPanel pattern={pattern} onPatternChange={setPattern} />}
 
       {pattern.chart_grid ? (
-        <PatternChartGrid grid={pattern.chart_grid} />
+        <ChartTracker patternId={pattern.id} grid={pattern.chart_grid} />
       ) : (
         pattern.has_photo && (
           <img
