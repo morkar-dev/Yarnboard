@@ -226,8 +226,10 @@ def _call_model(prompt: str, *, images: list[bytes] | None = None, schema: dict 
     Groq goes first when GROQ_API_KEY is set. Any Groq failure -- busy,
     rate-limited, over its free daily quota, too slow, a rejected request,
     an unusable answer -- moves on to Gemini, which then gets whatever is
-    left of the same TOTAL_BUDGET_SECONDS. Raises TranslationError when no
-    provider is configured or the last one fails.
+    left of the same TOTAL_BUDGET_SECONDS. The chain works the same in any
+    AI_PROVIDERS order: a failing provider hands over to the next, and one
+    that isn't last leaves the next one time for an attempt. Raises
+    TranslationError when no provider is configured or the last one fails.
     """
     providers = _providers()
     if not providers:
@@ -238,15 +240,27 @@ def _call_model(prompt: str, *, images: list[bytes] | None = None, schema: dict 
     for index, provider in enumerate(providers):
         later = providers[index + 1:]
         if provider == "gemini":
-            return _call_gemini(prompt, images=images, schema=schema, deadline=deadline)
-        if later and images and len(images) > _groq_max_images():
+            # Followed by another provider: stop early enough for it to
+            # get one attempt.
+            own_deadline = deadline - GROQ_ATTEMPT_SECONDS if later else deadline
+            try:
+                return _call_gemini(prompt, images=images, schema=schema, deadline=own_deadline)
+            except TranslationError as exc:
+                if not later:
+                    raise
+                logger.warning("Gemini failed (%s); trying %s", exc, later[0])
+                continue
+        if images and len(images) > _groq_max_images():
+            if not later:
+                raise TranslationError(
+                    f"Groq reads up to {_groq_max_images()} photos at a time and no other AI provider is "
+                    f"configured -- got {len(images)}. Set GEMINI_API_KEY to read more at once."
+                )
             logger.info("Groq takes up to %d photos, got %d; using %s", _groq_max_images(), len(images), later[0])
             continue
         try:
             return _call_groq(prompt, images=images, schema=schema, deadline=deadline, last=not later)
         except _ProviderFailed as exc:
-            if not later:
-                raise TranslationError(str(exc)) from exc
             logger.warning("Groq %s failed (%s); trying %s", exc.model, exc.reason, later[0])
     raise TranslationError("No AI provider could take this request.")  # unreachable in practice
 
@@ -280,6 +294,27 @@ def _to_json_schema(schema: dict) -> dict:
     if "items" in schema:
         out["items"] = _to_json_schema(schema["items"])
     return out
+
+
+def _matches_schema(value, schema: dict) -> bool:
+    """Whether `value` has the shape `schema` (Gemini's dialect) describes:
+    the right types, and every required property present. Groq's JSON
+    mode, used for photos, doesn't enforce the schema the way Gemini's
+    responseSchema and Groq's strict mode do, so its answers are checked
+    here -- a wrong shape counts as a provider failure and the next
+    provider gets the request."""
+    kind = schema["type"].upper()
+    if kind == "OBJECT":
+        properties = schema.get("properties", {})
+        return isinstance(value, dict) and all(
+            name in value and _matches_schema(value[name], properties[name])
+            for name in schema.get("required", [])
+        )
+    if kind == "ARRAY":
+        return isinstance(value, list) and all(_matches_schema(item, schema["items"]) for item in value)
+    if kind == "STRING":
+        return isinstance(value, str)
+    return True
 
 
 _THINKING = re.compile(r"<think>.*?</think>", re.DOTALL)
@@ -364,9 +399,12 @@ def _call_groq(prompt: str, *, images: list[bytes] | None, schema: dict | None, 
             time.sleep(backoff)
             continue
         try:
-            return _parse_json_answer(response.json()["choices"][0]["message"]["content"])
+            answer = _parse_json_answer(response.json()["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             fail("unexpected response", f"unexpected response shape: {exc}", exc)
+        if not _matches_schema(answer, schema or _RESPONSE_SCHEMA):
+            fail("unexpected response", "the answer doesn't match the requested JSON shape")
+        return answer
     fail("out of retries", "every retry failed")  # unreachable: the loop returns or fails
 
 
@@ -399,7 +437,12 @@ def _call_gemini(
     response = None
     for attempt in range(MAX_RETRIES + 1):
         remaining = deadline - _monotonic()
-        limit = PRIMARY_ATTEMPT_SECONDS if model == primary and fallback != primary else REQUEST_TIMEOUT_SECONDS
+        if model == primary and fallback != primary:
+            # Leave the lite model at least one attempt's worth of time,
+            # however much an earlier provider already used.
+            limit = max(MIN_ATTEMPT_SECONDS, min(PRIMARY_ATTEMPT_SECONDS, remaining - MIN_ATTEMPT_SECONDS))
+        else:
+            limit = REQUEST_TIMEOUT_SECONDS
         try:
             response = requests.post(
                 GEMINI_API_URL_TEMPLATE.format(model=model),

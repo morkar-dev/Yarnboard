@@ -16,6 +16,8 @@ from app.translation import TranslationError
 
 GROQ_KEY = "gsk_test_groq_key_value"
 GEMINI_KEY = "AIza-test-gemini-key"
+# A complete translation answer: Groq's answers are checked against the schema.
+PATTERN = {"title": "Hat", "materials": "", "abbreviations": "", "instructions": [{"heading": "Body", "steps": ["ch 4"]}]}
 
 
 class FakeResponse:
@@ -71,9 +73,9 @@ def install(monkeypatch, recorder):
 
 
 def test_groq_goes_first_with_a_bearer_key_and_strict_schema(both_keys, monkeypatch):
-    rec = install(monkeypatch, Recorder(groq_answer({"title": "כובע"})))
+    rec = install(monkeypatch, Recorder(groq_answer({**PATTERN, "title": "כובע"})))
 
-    assert translation._call_model("translate this") == {"title": "כובע"}
+    assert translation._call_model("translate this") == {**PATTERN, "title": "כובע"}
 
     call = rec.calls[0]
     assert rec.providers() == ["groq"]
@@ -144,9 +146,9 @@ def test_any_groq_failure_falls_back_to_gemini(both_keys, monkeypatch, caplog, f
 
 def test_reasoning_and_code_fences_around_the_json_are_ignored(both_keys, monkeypatch):
     wrap = lambda text: f"<think>let me see {{draft}}</think>\n```json\n{text}\n```"
-    install(monkeypatch, Recorder(groq_answer({"title": "Hat"}, wrap)))
+    install(monkeypatch, Recorder(groq_answer(PATTERN, wrap)))
 
-    assert translation._call_model("translate") == {"title": "Hat"}
+    assert translation._call_model("translate") == PATTERN
 
 
 def test_ai_providers_gemini_skips_groq(both_keys, monkeypatch):
@@ -162,9 +164,9 @@ def test_groq_alone_retries_busy_answers_then_succeeds(monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", GROQ_KEY)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setattr(translation, "RETRY_BACKOFF_SECONDS", 0)
-    rec = install(monkeypatch, Recorder(FakeResponse(429), FakeResponse(503), groq_answer({"title": "Hat"})))
+    rec = install(monkeypatch, Recorder(FakeResponse(429), FakeResponse(503), groq_answer(PATTERN)))
 
-    assert translation._call_model("translate") == {"title": "Hat"}
+    assert translation._call_model("translate") == PATTERN
     assert rec.providers() == ["groq", "groq", "groq"]
     assert rec.calls[0]["timeout"] == translation.REQUEST_TIMEOUT_SECONDS
 
@@ -188,26 +190,55 @@ def test_both_failing_raises_gemini_error(both_keys, monkeypatch):
         translation._call_model("translate")
 
 
-def test_gemini_gets_what_is_left_of_the_budget_after_groq(both_keys, monkeypatch):
+def test_after_a_slow_groq_gemini_still_reaches_its_lite_model(both_keys, monkeypatch):
+    """Groq uses its whole attempt, then Gemini's main model times out too:
+    the main model's attempt is capped so the lite model still gets one."""
     now = {"t": 1000.0}
     monkeypatch.setattr(translation, "_monotonic", lambda: now["t"])
+    calls = []
 
-    def slow_groq_then_gemini(url, headers, json, timeout):
-        calls.append(timeout)
-        if "groq.com" in url:
-            now["t"] += translation.GROQ_ATTEMPT_SECONDS
+    def post(url, headers, json, timeout):
+        calls.append((url, timeout))
+        if "groq.com" in url or translation.GEMINI_MODEL in url:
+            now["t"] += timeout
             raise requests.Timeout("slow")
         return gemini_answer({"title": "Hat"})
 
-    calls = []
-    monkeypatch.setattr(translation.requests, "post", slow_groq_then_gemini)
+    monkeypatch.setattr(translation.requests, "post", post)
 
-    translation._call_model("translate")
+    assert translation._call_model("translate") == {"title": "Hat"}
 
-    assert calls == [
-        translation.GROQ_ATTEMPT_SECONDS,
-        min(translation.PRIMARY_ATTEMPT_SECONDS, translation.TOTAL_BUDGET_SECONDS - translation.GROQ_ATTEMPT_SECONDS),
+    left_for_gemini = translation.TOTAL_BUDGET_SECONDS - translation.GROQ_ATTEMPT_SECONDS
+    primary_limit = min(translation.PRIMARY_ATTEMPT_SECONDS, left_for_gemini - translation.MIN_ATTEMPT_SECONDS)
+    assert [timeout for _, timeout in calls] == [
+        translation.GROQ_ATTEMPT_SECONDS, primary_limit, left_for_gemini - primary_limit,
     ]
+    assert translation.GEMINI_FALLBACK_MODEL in calls[2][0]
+
+
+def test_groq_photo_answer_with_the_wrong_shape_falls_back_to_gemini(both_keys, monkeypatch):
+    rec = install(monkeypatch, Recorder(groq_answer({}), gemini_answer({"text": "Hat"})))
+
+    assert transcription.transcribe_pattern_photos([b"a"]) == "Hat"
+    assert rec.providers() == ["groq", "gemini"]
+
+
+def test_gemini_first_hands_over_to_groq_when_it_fails(both_keys, monkeypatch):
+    monkeypatch.setenv("AI_PROVIDERS", "gemini,groq")
+    rec = install(monkeypatch, Recorder(FakeResponse(400), groq_answer(PATTERN)))
+
+    assert translation._call_model("translate") == PATTERN
+    assert rec.providers() == ["gemini", "groq"]
+
+
+def test_groq_alone_refuses_more_photos_than_it_takes_without_calling_it(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", GROQ_KEY)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    rec = install(monkeypatch, Recorder())
+
+    with pytest.raises(TranslationError, match="up to 3 photos"):
+        transcription.transcribe_pattern_photos([b"a", b"b", b"c", b"d"])
+    assert rec.calls == []
 
 
 def test_no_provider_configured(monkeypatch):

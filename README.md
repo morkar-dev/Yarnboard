@@ -67,7 +67,8 @@ hot-reload -- see Local setup below.
     vision model `qwen/qwen3.8-27b` (a Groq Preview model) for up to 3
     photos; change them with `GROQ_MODEL` / `GROQ_VISION_MODEL` /
     `GROQ_MAX_IMAGES`. Any Groq failure (busy, over quota, slow, bad
-    answer) or more photos than it takes moves on to Gemini.
+    answer) or more photos than it takes moves on to Gemini. With Groq
+    as the only provider, more than 3 photos at once are refused.
   - **Gemini** (`GEMINI_API_KEY`). When its main model
     (`gemini-flash-latest`) is overloaded, rate-limited or too slow, the
     same request is retried on `gemini-flash-lite-latest`; set
