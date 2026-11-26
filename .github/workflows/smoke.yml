@@ -15,9 +15,9 @@ name: Smoke
 # requests that come through the Worker.
 #
 # Needs repository secrets SMOKE_DEV_EMAIL, SMOKE_DEV_PASSWORD,
-# SMOKE_PROD_EMAIL, SMOKE_PROD_PASSWORD, and the repository variable
-# SMOKE_PROD_URL (SMOKE_DEV_URL, SMOKE_DEV_API_URL and SMOKE_PROD_API_URL
-# optional).
+# SMOKE_PROD_EMAIL, SMOKE_PROD_PASSWORD. The repository variables
+# SMOKE_DEV_URL, SMOKE_PROD_URL, SMOKE_DEV_API_URL and SMOKE_PROD_API_URL
+# are optional overrides of the addresses below.
 
 on:
   push:
@@ -96,7 +96,7 @@ jobs:
         working-directory: frontend
     env:
       HOME: /root
-      SMOKE_BASE_URL: ${{ vars.SMOKE_PROD_URL }}
+      SMOKE_BASE_URL: ${{ vars.SMOKE_PROD_URL || 'https://www.yarnboard.net' }}
       SMOKE_API_URL: ${{ vars.SMOKE_PROD_API_URL || 'https://yarnboard.onrender.com' }}
       SMOKE_EMAIL: ${{ secrets.SMOKE_PROD_EMAIL }}
       SMOKE_PASSWORD: ${{ secrets.SMOKE_PROD_PASSWORD }}

@@ -20,7 +20,10 @@ test("health: required settings are present on this deployment", async ({ api })
     test.info().annotations.push({ type: name, description: String(value) });
   }
 
-  const missing = REQUIRED_FLAGS.filter((flag) => config[flag] !== true);
+  // `ai` (any AI provider) is newer than `gemini`: an API that hasn't
+  // deployed it yet still counts when it has Gemini.
+  const flags = { ...config, ai: config.ai ?? (config.groq === true || config.gemini === true) };
+  const missing = REQUIRED_FLAGS.filter((flag) => flags[flag] !== true);
   expect(
     missing,
     `Not set on this deployment: ${missing.join(", ")} ` +
