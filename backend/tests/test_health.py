@@ -13,6 +13,8 @@ def test_health_reports_missing_config_as_false(client, monkeypatch):
     assert resp.get_json() == {
         "status": "ok",
         "config": {
+            "ai": False,
+            "groq": False,
             "gemini": False,
             "email_onboarding": False,
             "email_notifications": False,
@@ -30,8 +32,21 @@ def test_health_reports_set_config_without_values(client, monkeypatch):
 
     body = resp.get_json()
     assert body["config"]["gemini"] is True
+    assert body["config"]["ai"] is True
+    assert body["config"]["groq"] is False
     assert body["config"]["email_onboarding"] is True
     assert "test-value" not in resp.get_data(as_text=True)
+
+
+def test_health_ai_flag_is_true_with_only_groq(client, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "groq-test-value")
+
+    body = client.get("/api/health").get_json()
+
+    assert body["config"]["ai"] is True
+    assert body["config"]["groq"] is True
+    assert body["config"]["gemini"] is False
 
 
 def _app_with_proxy_secret(tmp_path):

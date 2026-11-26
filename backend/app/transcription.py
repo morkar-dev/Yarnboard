@@ -1,8 +1,9 @@
 """
 Reads a knitting/crochet pattern out of photos (a printed page, a book, a
-handwritten card) with Gemini's vision input, so a photographed pattern
-goes through the same review-then-save flow as a link or a file. Shares
-translation.py's Gemini call (key handling, retries, JSON responses).
+handwritten card) with a vision model (Groq first, Gemini as fallback),
+so a photographed pattern goes through the same review-then-save flow as
+a link or a file. Shares translation.py's _call_model (provider chain,
+retries, JSON responses).
 
 The model only transcribes -- it's asked to mark section and part headings
 with "# " and keep one step per line, and scraper.parse_pattern_text then
@@ -10,9 +11,7 @@ does the actual splitting into materials/abbreviations/instructions, the
 same way pasted text is handled.
 """
 
-import base64
-
-from .translation import TranslationError, _call_gemini
+from .translation import TranslationError, _call_model
 
 MAX_PHOTOS = 5
 
@@ -43,14 +42,10 @@ readable pattern, return {"text": ""}.
 def transcribe_pattern_photos(images: list[bytes]) -> str:
     """Plain-text transcription of the pattern in `images` (JPEG bytes, in
     page order). Empty string if nothing readable was found. Raises
-    TranslationError on any Gemini failure (no key, request error, bad
+    TranslationError on any AI failure (no key, request error, bad
     response)."""
-    parts = [
-        {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(image).decode("ascii")}}
-        for image in images
-    ]
-    result = _call_gemini(_PROMPT, extra_parts=parts, schema=_SCHEMA)
+    result = _call_model(_PROMPT, images=images, schema=_SCHEMA)
     text = result.get("text") if isinstance(result, dict) else None
     if not isinstance(text, str):
-        raise TranslationError("Gemini returned no transcription text.")
+        raise TranslationError("The AI returned no transcription text.")
     return text.strip()

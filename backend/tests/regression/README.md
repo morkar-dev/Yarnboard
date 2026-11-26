@@ -8,7 +8,7 @@ exactly which field changed.
 ```bash
 cd backend
 .venv/bin/python -m pytest tests/regression                    # offline, a second or two
-REGRESSION_LIVE=1 .venv/bin/python -m pytest tests/regression  # + live pages / Gemini
+REGRESSION_LIVE=1 .venv/bin/python -m pytest tests/regression  # + live pages / AI photo reads
 ```
 
 ## One folder per pattern
@@ -33,12 +33,12 @@ are format references -- copy one to start.
 | `html` | a saved web page uploaded on Submit | `page.html` | required |
 | `pdf` | a PDF uploaded on Submit | `pattern.pdf` | optional (the author comes from the file) |
 | `text` | text pasted on Submit | `pattern.txt` | optional |
-| `photos` | photos uploaded on Submit | `transcript.txt`, Gemini's reading of the photos (`record.py transcribe`) | optional |
+| `photos` | photos uploaded on Submit | `transcript.txt`, the AI's reading of the photos (`record.py transcribe`) | optional |
 
 `url` and `photos` cases depend on the outside world, so a normal run uses
 the saved snapshot/transcript, which keeps it fast and repeatable. Live
 mode (`REGRESSION_LIVE=1`) re-fetches the page or re-reads the photos
-(needs `GEMINI_API_KEY`) and checks the same expectations. If live fails
+(needs `GROQ_API_KEY` or `GEMINI_API_KEY`) and checks the same expectations. If live fails
 but the normal run passes, the site or the model changed, not our code.
 Re-capture the input, then see whether the normal run still passes.
 

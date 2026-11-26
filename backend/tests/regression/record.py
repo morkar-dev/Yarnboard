@@ -4,7 +4,8 @@ Run from backend/ with the venv's Python:
 
     python tests/regression/record.py new <case-id> --kind url --url https://...
     python tests/regression/record.py snapshot <case-id>     # url: save today's page as page.html
-    python tests/regression/record.py transcribe <case-id>   # photos: save Gemini's reading as transcript.txt
+    python tests/regression/record.py transcribe <case-id>   # photos: save the AI's reading as transcript.txt
+    python tests/regression/record.py transcribe <case-id> --provider groq --print   # compare one provider
     python tests/regression/record.py show <case-id>         # print what the parser produces now
     python tests/regression/record.py show <case-id> --draft # ...and save it as expect.draft.json
 
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -69,10 +71,15 @@ def cmd_transcribe(args) -> None:
     case = _case(args.case_id)
     if case.kind != "photos":
         sys.exit(f"{case.id} is kind {case.kind!r}; transcribe is only for photos cases")
+    if args.provider:
+        os.environ["AI_PROVIDERS"] = args.provider
     text = transcribe(case)
+    if args.print:
+        print(text)
+        return
     target = case.input_files[0]
     target.write_text(text, encoding="utf-8")
-    print(f"Saved Gemini's transcription ({len(text.splitlines())} lines) to {target.name}")
+    print(f"Saved the AI's transcription ({len(text.splitlines())} lines) to {target.name}")
 
 
 def cmd_show(args) -> None:
@@ -112,8 +119,10 @@ def main() -> None:
     snap.add_argument("case_id")
     snap.set_defaults(func=cmd_snapshot)
 
-    tr = sub.add_parser("transcribe", help="photos cases: save Gemini's transcription as transcript.txt")
+    tr = sub.add_parser("transcribe", help="photos cases: save the AI's transcription as transcript.txt")
     tr.add_argument("case_id")
+    tr.add_argument("--provider", choices=["groq", "gemini"], help="use only this AI provider")
+    tr.add_argument("--print", action="store_true", help="print the transcription instead of saving it")
     tr.set_defaults(func=cmd_transcribe)
 
     show = sub.add_parser("show", help="print what the parser produces for a case now")

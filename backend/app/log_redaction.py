@@ -26,6 +26,7 @@ from urllib.parse import urlsplit
 SECRET_ENV_VARS = (
     "SECRET_KEY",
     "GEMINI_API_KEY",
+    "GROQ_API_KEY",
     "RESEND_ONBOARDING",
     "RESEND_NOTIFICATIONS",
     "RESEND_NEWSLETTER",

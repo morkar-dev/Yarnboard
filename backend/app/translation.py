@@ -1,13 +1,16 @@
 """
-Pattern content translation between Hebrew and English, via Google's
-Gemini API (https://ai.google.dev/api/generate-content).
+Pattern content translation between Hebrew and English, and the AI call
+behind photo reading (transcription.py) -- via Groq
+(https://console.groq.com/docs) first when GROQ_API_KEY is set, with
+Google's Gemini (https://ai.google.dev/api/generate-content) as the
+fallback, or Gemini alone. See _call_model.
 
-Uses `requests` directly against the REST endpoint rather than the
-`google-generativeai` PyPI package -- same "one POST, not worth a new
-dependency" rationale as email.py's Resend integration.
+Uses `requests` directly against both REST endpoints rather than the
+providers' PyPI packages -- same "one POST, not worth a new dependency"
+rationale as email.py's Resend integration.
 
-Unlike email.py's "log instead of send when unset" fallback, a missing
-GEMINI_API_KEY here raises immediately: a translation the caller is
+Unlike email.py's "log instead of send when unset" fallback, having no
+AI key configured raises immediately: a translation the caller is
 actively waiting on (and will persist to the database) has no reasonable
 "pretend it worked" no-op, unlike a best-effort notification email.
 
@@ -15,16 +18,18 @@ Two directions, two public entry points -- translate_pattern_to_hebrew
 and translate_pattern_to_english -- since a pattern's own primary content
 isn't always English (see scraper.py's Hebrew keyword support): a
 Hebrew-sourced pattern needs an English overlay the same way an
-English-sourced one needs a Hebrew overlay. Both share _call_gemini (the
-actual HTTP call, retry, and response-shape handling, none of which is
-direction-specific) and _build_translated_instructions (turning Gemini's
-positional response back into a part-name-keyed dict); only the prompt
-text and the target language's field-name suffix differ between them.
+English-sourced one needs a Hebrew overlay. Both share _call_model (the
+provider chain, retries, and response-shape handling, none of which is
+direction-specific) and _build_translated_instructions (turning the
+model's positional response back into a part-name-keyed dict); only the
+prompt text and the target language's field-name suffix differ.
 """
 
+import base64
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
 
@@ -83,6 +88,32 @@ RETRY_BACKOFF_SECONDS = 2
 TOTAL_BUDGET_SECONDS = 75
 MIN_ATTEMPT_SECONDS = 10
 _monotonic = time.monotonic  # patched in tests
+
+# Groq (https://console.groq.com/docs) is tried first when GROQ_API_KEY is
+# set: its free plan needs no card and allows about 30 requests a minute
+# and 1,000 a day per model (November 2026), and it doesn't have Gemini's
+# days-long "high demand" spells. Gemini stays as the fallback. The order
+# can be changed per deployment, e.g. AI_PROVIDERS=gemini to switch Groq
+# off without a deploy.
+AI_PROVIDERS_ENV = "AI_PROVIDERS"
+DEFAULT_AI_PROVIDERS = "groq,gemini"
+PROVIDER_KEYS = {"groq": "GROQ_API_KEY", "gemini": "GEMINI_API_KEY"}
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+# Translation: one of Groq's models with strict JSON Schema output.
+GROQ_MODEL = "openai/gpt-oss-120b"
+GROQ_MODEL_ENV = "GROQ_MODEL"
+# Photo reading: Groq's vision model (a Preview model in November 2026 --
+# Groq may retire it at short notice; set GROQ_VISION_MODEL to its
+# successor, and Gemini covers the gap meanwhile).
+GROQ_VISION_MODEL = "qwen/qwen3.8-27b"
+GROQ_VISION_MODEL_ENV = "GROQ_VISION_MODEL"
+# Images Groq's vision model takes in one request; more photos than this
+# go straight to the next provider.
+GROQ_MAX_IMAGES = 3
+GROQ_MAX_IMAGES_ENV = "GROQ_MAX_IMAGES"
+# Groq usually answers in seconds; capping its one attempt leaves Gemini
+# most of TOTAL_BUDGET_SECONDS when it does stall.
+GROQ_ATTEMPT_SECONDS = 25
 
 # Schema Gemini must respond in -- one instructions entry per input part,
 # in the same order, so _build_translated_instructions can re-associate
@@ -176,16 +207,179 @@ def _build_glossary_section(glossary: dict[str, str]) -> str:
     )
 
 
-def _call_gemini(prompt: str, *, extra_parts: list[dict] | None = None, schema: dict | None = None) -> dict:
+def _providers() -> list[str]:
+    """The AI providers to try, in order: AI_PROVIDERS (default
+    "groq,gemini"), keeping only the ones whose API key is set."""
+    order = (os.environ.get(AI_PROVIDERS_ENV) or DEFAULT_AI_PROVIDERS).lower().split(",")
+    names = dict.fromkeys(name.strip() for name in order)
+    return [name for name in names if name in PROVIDER_KEYS and os.environ.get(PROVIDER_KEYS[name])]
+
+
+def _call_model(prompt: str, *, images: list[bytes] | None = None, schema: dict | None = None) -> dict:
     """
-    POST `prompt` to Gemini and return the parsed JSON response object
-    ({title, materials, abbreviations, instructions} unless another
-    `schema` is given) -- the actual HTTP call, retry-on-transient-failure,
-    and response-shape handling, shared by both translation directions
-    (see module docstring) and by photo transcription (transcription.py,
-    which passes images as `extra_parts`). Raises TranslationError if
-    GEMINI_API_KEY isn't set, every retry is exhausted, or the response
-    doesn't parse into the expected shape.
+    Send `prompt` (plus `images`, JPEG bytes, for photo reading) to the
+    configured AI providers in order and return the parsed JSON response
+    object ({title, materials, abbreviations, instructions} unless another
+    `schema` is given). Shared by both translation directions and by photo
+    transcription (transcription.py).
+
+    Groq goes first when GROQ_API_KEY is set. Any Groq failure -- busy,
+    rate-limited, over its free daily quota, too slow, a rejected request,
+    an unusable answer -- moves on to Gemini, which then gets whatever is
+    left of the same TOTAL_BUDGET_SECONDS. Raises TranslationError when no
+    provider is configured or the last one fails.
+    """
+    providers = _providers()
+    if not providers:
+        raise TranslationError(
+            "No AI provider is configured -- set GROQ_API_KEY and/or GEMINI_API_KEY. See README for setup."
+        )
+    deadline = _monotonic() + TOTAL_BUDGET_SECONDS
+    for index, provider in enumerate(providers):
+        later = providers[index + 1:]
+        if provider == "gemini":
+            return _call_gemini(prompt, images=images, schema=schema, deadline=deadline)
+        if later and images and len(images) > _groq_max_images():
+            logger.info("Groq takes up to %d photos, got %d; using %s", _groq_max_images(), len(images), later[0])
+            continue
+        try:
+            return _call_groq(prompt, images=images, schema=schema, deadline=deadline, last=not later)
+        except _ProviderFailed as exc:
+            if not later:
+                raise TranslationError(str(exc)) from exc
+            logger.warning("Groq %s failed (%s); trying %s", exc.model, exc.reason, later[0])
+    raise TranslationError("No AI provider could take this request.")  # unreachable in practice
+
+
+class _ProviderFailed(Exception):
+    """A provider other than the last one in the chain failed; _call_model
+    moves on to the next one."""
+
+    def __init__(self, message: str, *, model: str, reason: str):
+        super().__init__(message)
+        self.model = model
+        self.reason = reason
+
+
+def _groq_max_images() -> int:
+    try:
+        return max(1, int(os.environ.get(GROQ_MAX_IMAGES_ENV) or GROQ_MAX_IMAGES))
+    except ValueError:
+        return GROQ_MAX_IMAGES
+
+
+def _to_json_schema(schema: dict) -> dict:
+    """Gemini's schema dialect ("OBJECT", "STRING", ...) as standard JSON
+    Schema for Groq's strict mode: lowercase types, every property
+    required and no extra ones (strict mode demands both)."""
+    out = {"type": schema["type"].lower()}
+    if "properties" in schema:
+        out["properties"] = {name: _to_json_schema(sub) for name, sub in schema["properties"].items()}
+        out["required"] = list(schema["properties"])
+        out["additionalProperties"] = False
+    if "items" in schema:
+        out["items"] = _to_json_schema(schema["items"])
+    return out
+
+
+_THINKING = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _parse_json_answer(text: str) -> dict:
+    """The JSON object in a chat answer. Reasoning models may wrap it in
+    <think>...</think> or a code fence, so fall back to the outermost
+    {...} when the whole text doesn't parse."""
+    text = _THINKING.sub("", text).strip()
+    try:
+        return json.loads(text)
+    except ValueError:
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end <= start:
+            raise
+        return json.loads(text[start:end + 1])
+
+
+def _call_groq(prompt: str, *, images: list[bytes] | None, schema: dict | None, deadline: float, last: bool) -> dict:
+    """
+    One provider in _call_model's chain: Groq's OpenAI-compatible chat
+    API. When another provider follows (`last` false), Groq gets a single
+    attempt capped at GROQ_ATTEMPT_SECONDS and any failure is handed back
+    as _ProviderFailed, so the fallback keeps most of the time budget.
+    As the only provider, a busy answer is retried until the deadline,
+    and failures raise TranslationError.
+
+    Translations ask for strict JSON Schema output; photo reading uses
+    plain JSON mode, which is what Groq's vision models offer (the prompt
+    spells out the {"text": ...} shape).
+    """
+    api_key = os.environ[PROVIDER_KEYS["groq"]]
+    model = (os.environ.get(GROQ_VISION_MODEL_ENV) or GROQ_VISION_MODEL) if images else (
+        os.environ.get(GROQ_MODEL_ENV) or GROQ_MODEL
+    )
+    if images:
+        content = [{"type": "text", "text": prompt}] + [
+            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")}}
+            for image in images
+        ]
+        response_format = {"type": "json_object"}
+    else:
+        content = prompt
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {"name": "answer", "strict": True, "schema": _to_json_schema(schema or _RESPONSE_SCHEMA)},
+        }
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": content}],
+        "response_format": response_format,
+        "temperature": 0.2,
+    }
+    if model.startswith("openai/gpt-oss"):
+        # Less hidden reasoning, fewer tokens: the free plan counts tokens
+        # per minute, and translation needs care, not deep thought.
+        body["reasoning_effort"] = "low"
+
+    def fail(reason: str, detail: str, cause: Exception | None = None):
+        message = f"Groq API request failed ({model}): {detail.replace(api_key, '<redacted>')}"
+        if last:
+            raise TranslationError(message) from cause
+        raise _ProviderFailed(message, model=model, reason=reason) from cause
+
+    for attempt in range(MAX_RETRIES + 1):
+        remaining = deadline - _monotonic()
+        try:
+            response = requests.post(
+                GROQ_API_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=body,
+                timeout=min(REQUEST_TIMEOUT_SECONDS if last else GROQ_ATTEMPT_SECONDS, remaining),
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            busy = status is None or status == 429 or status >= 500
+            backoff = RETRY_BACKOFF_SECONDS * (attempt + 1)
+            if not last or not busy or attempt == MAX_RETRIES or deadline - _monotonic() - backoff < MIN_ATTEMPT_SECONDS:
+                fail(str(status or type(exc).__name__), str(exc), exc)
+            time.sleep(backoff)
+            continue
+        try:
+            return _parse_json_answer(response.json()["choices"][0]["message"]["content"])
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            fail("unexpected response", f"unexpected response shape: {exc}", exc)
+    fail("out of retries", "every retry failed")  # unreachable: the loop returns or fails
+
+
+def _call_gemini(
+    prompt: str, *, images: list[bytes] | None = None, schema: dict | None = None, deadline: float | None = None
+) -> dict:
+    """
+    One provider in _call_model's chain (and the whole chain when Groq
+    isn't configured): Gemini, alternating between its main and lite
+    models on busy answers until `deadline` (default: a fresh
+    TOTAL_BUDGET_SECONDS). Raises TranslationError if GEMINI_API_KEY isn't
+    set, every retry is exhausted, or the response doesn't parse into the
+    expected shape.
     """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -193,10 +387,15 @@ def _call_gemini(prompt: str, *, extra_parts: list[dict] | None = None, schema: 
             "GEMINI_API_KEY is not set -- cannot translate. See README for setup."
         )
 
+    image_parts = [
+        {"inline_data": {"mime_type": "image/jpeg", "data": base64.b64encode(image).decode("ascii")}}
+        for image in images or []
+    ]
     primary = os.environ.get(GEMINI_MODEL_ENV) or GEMINI_MODEL
     fallback = os.environ.get(GEMINI_FALLBACK_MODEL_ENV) or GEMINI_FALLBACK_MODEL
     model = primary
-    deadline = _monotonic() + TOTAL_BUDGET_SECONDS
+    if deadline is None:
+        deadline = _monotonic() + TOTAL_BUDGET_SECONDS
     response = None
     for attempt in range(MAX_RETRIES + 1):
         remaining = deadline - _monotonic()
@@ -208,7 +407,7 @@ def _call_gemini(prompt: str, *, extra_parts: list[dict] | None = None, schema: 
                 # exception messages and tracebacks, headers don't.
                 headers={"x-goog-api-key": api_key},
                 json={
-                    "contents": [{"parts": [{"text": prompt}, *(extra_parts or [])]}],
+                    "contents": [{"parts": [{"text": prompt}, *image_parts]}],
                     "generationConfig": {
                         "responseMimeType": "application/json",
                         "responseSchema": schema or _RESPONSE_SCHEMA,
@@ -311,7 +510,7 @@ def translate_pattern_to_hebrew(
         pattern_json=json.dumps(pattern_for_model, ensure_ascii=False, indent=2),
     )
 
-    translated = _call_gemini(prompt)
+    translated = _call_model(prompt)
     try:
         translated_parts = translated["instructions"]
     except KeyError as exc:
@@ -353,7 +552,7 @@ def translate_pattern_to_english(
         pattern_json=json.dumps(pattern_for_model, ensure_ascii=False, indent=2),
     )
 
-    translated = _call_gemini(prompt)
+    translated = _call_model(prompt)
     try:
         translated_parts = translated["instructions"]
     except KeyError as exc:
