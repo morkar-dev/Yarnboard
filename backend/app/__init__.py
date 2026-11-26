@@ -24,6 +24,7 @@ from flask_cors import CORS
 
 from .config import INSECURE_DEFAULT_SECRET_KEY, ProdConfig, get_config
 from .extensions import db, bcrypt, limiter
+from .log_redaction import install as install_log_redaction
 
 # backend/app/__init__.py -> up three levels is the repo root, then into
 # the frontend's Vite build output. Doesn't exist until `npm run build`
@@ -46,6 +47,8 @@ def create_app(config_overrides: dict | None = None):
     `backend/instance/yarnboard.db` instead of a test's temp file --
     creating tables, then dropping them all at teardown.
     """
+    # Before anything can log: masks secret env values in every log line.
+    install_log_redaction()
     app = Flask(__name__)
     config_class = get_config()
     app.config.from_object(config_class)

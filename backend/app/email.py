@@ -161,11 +161,13 @@ def render_newsletter_body(body: str) -> str:
 
 
 def newsletter_html(body: str, unsubscribe_url: str) -> str:
+    updates_url = os.environ.get("PUBLIC_APP_URL", "http://localhost:5173") + "/updates"
     return (
         render_newsletter_body(body)
         + '<hr style="border:none;border-top:1px solid #ddd;margin:24px 0">'
         + '<p style="color:#777;font-size:12px">You get this because you turned on '
         + "product update emails in your Yarnboard notification settings. "
+        + f'<a href="{html.escape(updates_url)}">All updates</a> · '
         + f'<a href="{html.escape(unsubscribe_url)}">Unsubscribe</a></p>'
     )
 

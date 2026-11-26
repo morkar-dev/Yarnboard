@@ -5,7 +5,7 @@ import requests
 
 import app.email as email_module
 from app.extensions import db
-from app.models import User
+from app.models import NewsletterIssue, User
 from app.newsletter import routes as newsletter_routes
 
 
@@ -125,7 +125,7 @@ def test_send_reaches_only_verified_subscribers(client, app, sent):
     assert client.get("/api/admin/newsletter").get_json() == {"subscriber_count": 2}
     resp = client.post("/api/admin/newsletter/send", json={"subject": "New: photos", "body": "Hello", "expected_count": 2})
 
-    assert resp.get_json() == {"sent": 2}
+    assert resp.get_json()["sent"] == 2
     assert sorted(_all_recipients(sent)) == ["yes1@test.com", "yes2@test.com"]
     email = sent[0]["emails"][0]
     assert email["subject"] == "New: photos"
@@ -153,7 +153,7 @@ def test_send_goes_out_in_batches_of_100(client, app, sent):
 
     resp = client.post("/api/admin/newsletter/send", json={"subject": "Hi", "body": "News", "expected_count": 130})
 
-    assert resp.get_json() == {"sent": 130}
+    assert resp.get_json()["sent"] == 130
     assert [len(call["emails"]) for call in sent] == [100, 30]
     assert all(call["url"] == email_module.RESEND_BATCH_URL for call in sent)
 
@@ -194,6 +194,71 @@ def test_empty_newsletter_is_rejected(client, app):
 
     assert resp.status_code == 400
     assert resp.get_json()["code"] == "newsletter_empty"
+
+
+# --- Public Updates page ----------------------------------------------------
+
+def test_a_sent_newsletter_appears_on_the_updates_page(client, app, sent):
+    admin_id = _make_user(app, "admin", admin=True)
+    _make_user(app, "yes1", subscribed=True)
+    _login_as(client, admin_id)
+
+    first = client.post("/api/admin/newsletter/send", json={"subject": "Photos", "body": "Upload photos.", "expected_count": 1})
+    second = client.post("/api/admin/newsletter/send", json={"subject": "Hebrew", "body": "Now in Hebrew.", "expected_count": 1})
+    with client.session_transaction() as session:
+        session.clear()
+
+    updates = client.get("/api/updates").get_json()["updates"]
+
+    assert [u["subject"] for u in updates] == ["Hebrew", "Photos"]
+    assert updates[0]["id"] == second.get_json()["update_id"]
+    assert updates[1]["id"] == first.get_json()["update_id"]
+    assert updates[0]["body"] == "Now in Hebrew."
+    assert updates[0]["sent_at"]
+    # Nothing about who sent it or to how many.
+    assert set(updates[0]) == {"id", "subject", "body", "sent_at"}
+
+
+def test_test_sends_and_previews_are_not_published(client, app, sent):
+    _login_as(client, _make_user(app, "admin", admin=True))
+
+    client.post("/api/admin/newsletter/test", json={"subject": "Hi", "body": "News"})
+    client.post("/api/admin/newsletter/preview", json={"subject": "Hi", "body": "News"})
+
+    assert client.get("/api/updates").get_json() == {"updates": []}
+
+
+def test_a_send_that_fails_partway_is_not_published(client, app, monkeypatch):
+    admin_id = _make_user(app, "admin", admin=True)
+    _make_user(app, "yes1", subscribed=True)
+    _login_as(client, admin_id)
+    monkeypatch.setenv("RESEND_NEWSLETTER", "test-key")
+
+    def failing_post(*args, **kwargs):
+        raise requests.ConnectionError("down")
+
+    monkeypatch.setattr(email_module.requests, "post", failing_post)
+    client.post("/api/admin/newsletter/send", json={"subject": "Hi", "body": "News", "expected_count": 1})
+
+    assert client.get("/api/updates").get_json() == {"updates": []}
+
+
+def test_a_refused_send_stores_nothing(client, app, sent):
+    _login_as(client, _make_user(app, "admin", admin=True))
+    _make_user(app, "yes1", subscribed=True)
+
+    client.post("/api/admin/newsletter/send", json={"subject": "Hi", "body": "News", "expected_count": 7})
+
+    with app.app_context():
+        assert NewsletterIssue.query.count() == 0
+
+
+def test_newsletter_footer_links_to_all_updates(monkeypatch):
+    monkeypatch.setenv("PUBLIC_APP_URL", "https://www.yarnboard.net")
+
+    html = email_module.newsletter_html("Hello", "https://www.yarnboard.net/unsubscribe?token=t")
+
+    assert 'href="https://www.yarnboard.net/updates"' in html
 
 
 # --- Rendering ----------------------------------------------------------------

@@ -43,4 +43,18 @@
     <xhtml:link rel="alternate" hreflang="he" href="https://www.yarnboard.net/he/terms" />
     <xhtml:link rel="alternate" hreflang="x-default" href="https://www.yarnboard.net/terms" />
   </url>
+  <url>
+    <loc>https://www.yarnboard.net/updates</loc>
+    <lastmod>2026-11-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.yarnboard.net/updates" />
+    <xhtml:link rel="alternate" hreflang="he" href="https://www.yarnboard.net/he/updates" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.yarnboard.net/updates" />
+  </url>
+  <url>
+    <loc>https://www.yarnboard.net/he/updates</loc>
+    <lastmod>2026-11-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.yarnboard.net/updates" />
+    <xhtml:link rel="alternate" hreflang="he" href="https://www.yarnboard.net/he/updates" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://www.yarnboard.net/updates" />
+  </url>
 </urlset>

@@ -6,8 +6,12 @@ unsubscribe link that works without logging in.
 
 The opt-in lives in User.notification_settings under "newsletter"
 ({"email": bool}), next to the per-pattern notification toggles, so no
-schema change is needed. Sends aren't stored; each one is logged.
+schema change is needed. Each send is stored as a NewsletterIssue and,
+once it has gone out, shown to everyone on the public Updates page
+(GET /api/updates, the frontend's /updates).
 """
+
+from datetime import datetime, timezone
 
 import requests
 from flask import Blueprint, current_app, jsonify, request
@@ -15,7 +19,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 
 from ..email import newsletter_html, send_newsletter_batch
 from ..extensions import db, limiter
-from ..models import User
+from ..models import NewsletterIssue, User
 from ..utils import get_current_user_id
 
 newsletter_bp = Blueprint("newsletter", __name__, url_prefix="/api")
@@ -198,14 +202,43 @@ def send_newsletter():
     if not recipients:
         return jsonify({"error": "Nobody has turned on product updates yet.", "code": "no_subscribers"}), 400
 
+    # Stored first (unpublished): if the table is missing or the write
+    # fails, nothing has been emailed yet.
+    issue = NewsletterIssue(subject=subject, body=body, sent_by_id=admin.id)
+    db.session.add(issue)
+    db.session.commit()
+
     try:
         sent = send_newsletter_batch(subject, body, [(u.email, unsubscribe_token(u)) for u in recipients])
     except requests.RequestException as exc:
-        current_app.logger.error("Newsletter %r failed partway: %s", subject, exc)
+        current_app.logger.error("Newsletter %r (issue %d) failed partway: %s", subject, issue.id, exc)
         return jsonify({
             "error": "Sending stopped partway. Check the server log before sending again, so nobody gets it twice.",
             "code": "newsletter_send_failed",
         }), 502
 
+    issue.published = True
+    issue.recipient_count = sent
+    issue.sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.session.commit()
     current_app.logger.info("Newsletter %r sent to %d subscriber(s) by %s", subject, sent, admin.username)
-    return jsonify({"sent": sent}), 200
+    return jsonify({"sent": sent, "update_id": issue.id}), 200
+
+
+@newsletter_bp.route("/updates", methods=["GET"])
+def list_updates():
+    """
+    The public Updates page: every newsletter that went out, newest first.
+    No login needed.
+    ---
+    tags: [Newsletter]
+    responses:
+      200:
+        description: "{updates: [{id, subject, body, sent_at}]}"
+    """
+    issues = (
+        NewsletterIssue.query.filter_by(published=True)
+        .order_by(NewsletterIssue.sent_at.desc(), NewsletterIssue.id.desc())
+        .all()
+    )
+    return jsonify({"updates": [issue.to_public_dict() for issue in issues]}), 200

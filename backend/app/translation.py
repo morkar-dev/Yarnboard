@@ -204,7 +204,9 @@ def _call_gemini(prompt: str, *, extra_parts: list[dict] | None = None, schema: 
         try:
             response = requests.post(
                 GEMINI_API_URL_TEMPLATE.format(model=model),
-                params={"key": api_key},
+                # In a header, not the URL's ?key=: request URLs end up in
+                # exception messages and tracebacks, headers don't.
+                headers={"x-goog-api-key": api_key},
                 json={
                     "contents": [{"parts": [{"text": prompt}, *(extra_parts or [])]}],
                     "generationConfig": {
