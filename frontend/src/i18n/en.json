@@ -315,6 +315,13 @@
     "hint": "Tap a cell to mark it as done; tap again to unmark it. With a mouse, drag to mark many cells; on a phone, turn on Drag to mark first.",
     "guestNotice": "As a guest, marks are saved on this device only."
   },
+  "chartRefresh": {
+    "button": "Refresh from Stitch Fiddle",
+    "refreshing": "Fetching the chart again…",
+    "updated": "Chart updated from Stitch Fiddle.",
+    "upToDate": "The chart is already up to date.",
+    "failed": "Couldn't fetch the chart from Stitch Fiddle. Please try again."
+  },
   "editPattern": {
     "title": "Edit Pattern",
     "photoLabel": "Photo of the finished piece",

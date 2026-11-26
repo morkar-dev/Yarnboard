@@ -266,10 +266,17 @@ export function fetchSharedWithMe() {
 
 /** Replaces the current user's marked cells on this pattern's chart grid
  * (the whole set each time; [] clears them). See ChartTracker. */
-export function saveChartMarks(patternId: number, markedCells: number[], options: { keepalive?: boolean } = {}) {
+export function saveChartMarks(
+  patternId: number,
+  markedCells: number[],
+  gridShape: string,
+  options: { keepalive?: boolean } = {},
+) {
   return request<{ marked_cells: number[] }>(`/api/patterns/${patternId}/chart-marks`, {
     method: "PUT",
-    body: JSON.stringify({ marked_cells: markedCells }),
+    // gridShape ("<columns>x<rows>") lets the server refuse marks made on
+    // a chart that has since been resized (409 chart_resized).
+    body: JSON.stringify({ marked_cells: markedCells, grid_shape: gridShape }),
     // keepalive lets a save started while the page is closing finish.
     keepalive: options.keepalive,
   });
@@ -436,6 +443,17 @@ export function deleteStitchFiddleLink(linkId: number) {
 /** Fetches the chart from Stitch Fiddle (slow -- launches a real headless
  * browser server-side) and turns it into a Pattern, or returns the
  * existing one if this link was already imported. */
+/** Fetches an imported chart again from its Stitch Fiddle share link and
+ * replaces the pattern's grid and colours (title and materials stay as
+ * they are). Slow like importStitchFiddleLink. `changed` is false when the
+ * chart was already up to date. */
+export function refreshStitchFiddleChart(patternId: number) {
+  return request<{ message: string; changed: boolean; pattern: Pattern }>(
+    `/api/stitch-fiddle/patterns/${patternId}/refresh`,
+    { method: "POST" },
+  );
+}
+
 export function importStitchFiddleLink(linkId: number) {
   return request<{ message: string; pattern: Pattern }>(
     `/api/stitch-fiddle/links/${linkId}/import`,
