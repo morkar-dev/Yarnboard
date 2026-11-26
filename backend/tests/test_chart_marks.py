@@ -129,3 +129,17 @@ def test_deleting_the_pattern_deletes_its_marks(client, monkeypatch):
     assert client.delete(f"/api/patterns/{pattern_id}").status_code == 200
     with client.application.app_context():
         assert UserChartProgress.query.count() == 0
+
+
+def test_marks_made_on_an_older_chart_size_are_refused(client, monkeypatch):
+    pattern_id, _ = _import_chart(client, monkeypatch)
+    current = f"{SIZE['columnCount']}x{SIZE['rowCount']}"
+    assert client.put(
+        f"/api/patterns/{pattern_id}/chart-marks", json={"marked_cells": [1], "grid_shape": current}
+    ).status_code == 200
+
+    resp = client.put(f"/api/patterns/{pattern_id}/chart-marks", json={"marked_cells": [2], "grid_shape": "3x2"})
+
+    assert resp.status_code == 409
+    assert resp.get_json()["code"] == "chart_resized"
+    assert _marks(client, pattern_id) == [1]

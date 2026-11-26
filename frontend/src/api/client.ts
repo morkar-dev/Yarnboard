@@ -266,10 +266,17 @@ export function fetchSharedWithMe() {
 
 /** Replaces the current user's marked cells on this pattern's chart grid
  * (the whole set each time; [] clears them). See ChartTracker. */
-export function saveChartMarks(patternId: number, markedCells: number[], options: { keepalive?: boolean } = {}) {
+export function saveChartMarks(
+  patternId: number,
+  markedCells: number[],
+  gridShape: string,
+  options: { keepalive?: boolean } = {},
+) {
   return request<{ marked_cells: number[] }>(`/api/patterns/${patternId}/chart-marks`, {
     method: "PUT",
-    body: JSON.stringify({ marked_cells: markedCells }),
+    // gridShape ("<columns>x<rows>") lets the server refuse marks made on
+    // a chart that has since been resized (409 chart_resized).
+    body: JSON.stringify({ marked_cells: markedCells, grid_shape: gridShape }),
     // keepalive lets a save started while the page is closing finish.
     keepalive: options.keepalive,
   });

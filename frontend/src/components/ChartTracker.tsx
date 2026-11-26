@@ -69,7 +69,7 @@ export default function ChartTracker({ patternId, grid }: Props) {
       window.clearTimeout(pending.current.timer);
       const cells = [...pending.current.cells];
       pending.current = null;
-      saveChartMarks(patternId, cells, { keepalive: true }).catch(() => {
+      saveChartMarks(patternId, cells, shape, { keepalive: true }).catch(() => {
         // The page is going away; there's nothing left to show an error on.
       });
     }
@@ -78,7 +78,7 @@ export default function ChartTracker({ patternId, grid }: Props) {
       window.removeEventListener("pagehide", flush);
       flush();
     };
-  }, [patternId]);
+  }, [patternId, shape]);
 
   function persist(next: Set<number>) {
     if (!user) {
@@ -89,7 +89,7 @@ export default function ChartTracker({ patternId, grid }: Props) {
     const timer = window.setTimeout(async () => {
       pending.current = null;
       try {
-        const response = await saveChartMarks(patternId, [...next]);
+        const response = await saveChartMarks(patternId, [...next], shape);
         saved.current = new Set(response.marked_cells);
         setSaveError(null);
       } catch {

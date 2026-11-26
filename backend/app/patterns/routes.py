@@ -1770,8 +1770,12 @@ def save_chart_marks(pattern_id):
     one cell at a time, since a drag marks many cells at once; an empty
     list clears every mark.
 
-    Body: {"marked_cells": [<row-major cell index>, ...]}. Duplicates are
-    dropped and the list is stored sorted.
+    Body: {"marked_cells": [<row-major cell index>, ...], "grid_shape":
+    "<columns>x<rows>"}. Duplicates are dropped and the list is stored
+    sorted. `grid_shape` is the chart size the marks were made on: if the
+    chart has since been resized (a Stitch Fiddle refresh), the save is
+    refused with 409 rather than storing indices that now point at other
+    cells. It's optional, for callers that don't send it.
     ---
     tags: [Patterns]
     parameters:
@@ -1789,6 +1793,7 @@ def save_chart_marks(pattern_id):
             marked_cells:
               type: array
               items: {type: integer}
+            grid_shape: {type: string}
     responses:
       200:
         description: Marks saved; returns the stored list
@@ -1798,6 +1803,8 @@ def save_chart_marks(pattern_id):
         description: Not logged in
       404:
         description: No such pattern, or not visible to this user
+      409:
+        description: The chart was resized since these marks were made
     """
     user_id, error = _require_login()
     if error:
@@ -1810,7 +1817,14 @@ def save_chart_marks(pattern_id):
     if not pattern.chart_grid_data:
         return jsonify({"error": "This pattern has no chart.", "code": "no_chart"}), 400
 
-    cells = (request.get_json(silent=True) or {}).get("marked_cells")
+    data = request.get_json(silent=True) or {}
+    shape = data.get("grid_shape")
+    if shape is not None and shape != pattern.chart_grid_shape:
+        return jsonify({
+            "error": "This chart has changed size since these marks were made. Reload the page.",
+            "code": "chart_resized",
+        }), 409
+    cells = data.get("marked_cells")
     cell_count = len(pattern.chart_grid_data)
     if not isinstance(cells, list) or not all(
         isinstance(cell, int) and not isinstance(cell, bool) and 0 <= cell < cell_count for cell in cells
